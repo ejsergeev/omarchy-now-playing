@@ -34,6 +34,9 @@ timeline, transport, per-app volume and every media source on the machine.
 - **Covers that never blink.** The next cover decodes off screen and fades in
   over the old one. The app icon Chromium serves as "art" between tracks is
   recognised and skipped.
+- **Three ways to show a cover.** Click the cover to step through the cover
+  itself, a duotone in your theme's colours, and the ASCII spectrum. The
+  choice applies to every source and is kept across restarts.
 - **An ASCII spectrum when there is no art.** An LED-style analyser fills the
   cover box, shaped by the track's name and dancing while it plays.
 - **Matching app icons.** Every source icon is normalised to the same size and
@@ -130,6 +133,7 @@ what is playing every time it opens.
 | `scripts/probe-art.sh` | Measures how close new local art is to the player's own icon; a near match is Chromium's placeholder, not a cover. |
 | `scripts/app-icon.sh` | Turns any app icon into a single-colour glyph of a fixed size: brightness becomes opacity, the result is trimmed and centred. Cached in `~/.cache/omarchy-now-playing`. |
 | `scripts/raise-player.sh` | Finds and focuses the player's Hyprland window when the player cannot raise itself over MPRIS. |
+| `shaders/` | The duotone shader, with its compiled `.qsb` (rebuilt by `tools/build-shaders.sh`). |
 | `i18n/` | One catalog per Omarchy language. |
 
 Volume goes to the player's PipeWire stream rather than MPRIS, because browsers
@@ -157,7 +161,8 @@ omarchy plugin enable io.github.ejsergeev.now-playing
 After editing, run `omarchy restart shell` to load the change.
 
 `tools/lint.sh` runs every check the plugin is held to: qmllint, shellcheck
-(`pacman -S shellcheck`), the unit tests with coverage (Node, no packages),
+(`pacman -S shellcheck`), that the compiled shaders match their sources
+(`pacman -S qt6-shadertools`), the unit tests with coverage (Node, no packages),
 the translation and structure checks, and `omarchy plugin validate`.
 `node bench/selection.bench.mjs` and `node bench/spectrum.bench.mjs` time the
 hot paths, and `tools/measure.py` measures the plugin inside the running

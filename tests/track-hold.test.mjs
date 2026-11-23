@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { load } from "./qmljs.mjs"
 
 const H = load("lib/TrackHold.js")
-const base = { hasPlayer: true, key: "a", shownKey: "a", shownGone: false, explicit: false, liveMedia: true, stopped: false }
+const base = { hasPlayer: true, key: "a", shownKey: "a", shownGone: false, explicit: false, liveMedia: true }
 
 test("a switch to another player waits, unless it is explicit, the shown one quit, or none is left", () => {
   assert.equal(H.refreshAction({ ...base, key: "b" }), "waitSwitch")
@@ -12,10 +12,12 @@ test("a switch to another player waits, unless it is explicit, the shown one qui
   assert.equal(H.refreshAction({ ...base, hasPlayer: false, key: "" }), "apply")
 })
 
-test("blank metadata waits unless the player stopped", () => {
+test("blank metadata waits, briefly when the player stopped", () => {
   assert.equal(H.refreshAction(base), "apply")
   assert.equal(H.refreshAction({ ...base, liveMedia: false }), "waitBlank")
-  assert.equal(H.refreshAction({ ...base, liveMedia: false, stopped: true }), "apply")
+  assert.equal(H.blankHoldMs(false), H.BLANK_HOLD_MS)
+  assert.equal(H.blankHoldMs(true), H.STOPPED_HOLD_MS)
+  assert.ok(H.STOPPED_HOLD_MS < H.BLANK_HOLD_MS)
 })
 
 test("art: new art is probed, known or rejected art kept, missing art cleared now or later", () => {

@@ -48,9 +48,12 @@ QtObject {
   readonly property string liveArtUrl: player && player.trackArtUrl ? String(player.trackArtUrl) : ""
   readonly property string signature: MediaModel.trackSignature(player)
 
-  onSignatureChanged: refresh()
-  onPlayerChanged: refresh()
-  onPlayersByKeyChanged: refresh()
+  // Players update their metadata one property at a time, and selection
+  // follows; deciding at the end of the turn sees the whole change, not a
+  // half-updated track that would apply as a blank.
+  onSignatureChanged: Qt.callLater(refresh)
+  onPlayerChanged: Qt.callLater(refresh)
+  onPlayersByKeyChanged: Qt.callLater(refresh)
   Component.onCompleted: apply()
 
   function refresh() {
@@ -58,7 +61,6 @@ QtObject {
       hasPlayer: !!player, key: playerKey, shownKey: shownKey,
       shownGone: shownKey !== "" && !playersByKey[shownKey],
       explicit: explicit, liveMedia: liveMedia,
-      stopped: !!player && player.playbackState === MprisPlaybackState.Stopped,
     })
     if (action === "waitSwitch") {
       blankHold.stop()
@@ -72,6 +74,7 @@ QtObject {
       blankHold.stop()
       apply()
     } else {
+      blankHold.interval = TrackHold.blankHoldMs(player.playbackState === MprisPlaybackState.Stopped)
       blankHold.restart()
     }
   }

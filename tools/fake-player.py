@@ -2,13 +2,15 @@
 """A silent MPRIS player for repeatable measurements.
 
 Usage: fake-player.py [--name NAME] [--art always|never|alternate] [--tracks N]
-                      [--paused]
+                      [--paused] [--skip-gap MS]
 
 Owns org.mpris.MediaPlayer2.<NAME> on the session bus and plays a list of
 synthetic tracks without making a sound. Next/Previous change the track at
 once, so the bench scenarios can drive track changes without touching the
 user's real players. Art, when a track has it, is a small PNG generated with
 ImageMagick into $XDG_RUNTIME_DIR, so the plugin probes it like a browser's.
+With --skip-gap, a skip first reports Stopped with no metadata for that long,
+as YouTube Music in Chromium does.
 """
 
 import argparse
@@ -72,6 +74,8 @@ class FakePlayer:
         self.name = args.name
         self.art_mode = args.art
         self.count = args.tracks
+        self.skip_gap_ms = args.skip_gap
+        self.blank = False
         self.index = 0
         self.playing = not args.paused
         self.offset_us = 0              # position when playback last (re)started
@@ -93,6 +97,8 @@ class FakePlayer:
         return "file://" + path
 
     def metadata(self):
+        if self.blank:
+            return {"mpris:trackid": GLib.Variant("o", "/org/mpris/MediaPlayer2/TrackList/NoTrack")}
         i = self.index
         md = {
             "mpris:trackid": GLib.Variant("o", f"/np/bench/track/{i}"),
@@ -124,7 +130,7 @@ class FakePlayer:
                 "SupportedMimeTypes": GLib.Variant("as", []),
             }
         return {
-            "PlaybackStatus": GLib.Variant("s", "Playing" if self.playing else "Paused"),
+            "PlaybackStatus": GLib.Variant("s", "Stopped" if self.blank else "Playing" if self.playing else "Paused"),
             "Rate": GLib.Variant("d", 1.0),
             "Metadata": GLib.Variant("a{sv}", self.metadata()),
             "Volume": GLib.Variant("d", 1.0),
@@ -157,7 +163,17 @@ class FakePlayer:
         self.index = (self.index + delta) % self.count
         self.offset_us = 0
         self.started = time.monotonic()
-        self.changed("Metadata")
+        if self.skip_gap_ms:
+            self.blank = True
+            self.changed("Metadata", "PlaybackStatus")
+            GLib.timeout_add(self.skip_gap_ms, self.end_gap)
+        else:
+            self.changed("Metadata")
+
+    def end_gap(self):
+        self.blank = False
+        self.changed("Metadata", "PlaybackStatus")
+        return False
 
     def on_call(self, conn, sender, path, iface, method, params, invocation):
         if method == "Next":
@@ -203,6 +219,7 @@ def main():
     parser.add_argument("--art", choices=["always", "never", "alternate"], default="alternate")
     parser.add_argument("--tracks", type=int, default=50)
     parser.add_argument("--paused", action="store_true")
+    parser.add_argument("--skip-gap", type=int, default=0, metavar="MS")
     FakePlayer(parser.parse_args()).run()
 
 

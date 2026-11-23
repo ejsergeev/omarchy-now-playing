@@ -10,6 +10,7 @@ QtObject {
   readonly property var scale: Style.font
 
   readonly property color foreground: bar.foreground
+  readonly property color background: bar.background
   readonly property color accent: Color.accent
   readonly property string fontFamily: bar.fontFamily
   readonly property real display: scale.display

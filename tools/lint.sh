@@ -2,7 +2,7 @@
 # Every static check the plugin is held to (docs/METRICS.md, Q1-Q6). Exits
 # non-zero if any of them finds something.
 #   tools/lint.sh            all checks
-#   tools/lint.sh qml        one check: qml, sh, test, i18n, structure, manifest
+#   tools/lint.sh qml        one check: qml, sh, shaders, test, i18n, structure, manifest
 set -u
 cd "$(dirname "$0")/.." || exit 1
 QT_BIN=${QT_BIN:-/usr/lib/qt6/bin}
@@ -35,6 +35,15 @@ if run sh; then
   else
     echo "shellcheck: not installed, skipped (pacman -S shellcheck)"
   fi
+fi
+
+if run shaders; then
+  tools/build-shaders.sh --check
+  case $? in
+    0) echo "shaders: up to date" ;;
+    2) echo "shaders: qsb not installed, skipped (pacman -S qt6-shadertools)" ;;
+    *) fail shaders ;;
+  esac
 fi
 
 if run test; then

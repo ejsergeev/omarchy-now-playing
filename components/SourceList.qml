@@ -15,6 +15,7 @@ Column {
   required property Theme theme
   required property var strings
   required property var players
+  required property var held      // key -> { title, artist } between tracks
   required property string activeKey
 
   signal showRequested(string key)
@@ -33,6 +34,9 @@ Column {
       readonly property bool selected: key === list.activeKey
       readonly property bool playing: !!modelData.isPlaying
       readonly property string appName: modelData.identity || MediaModel.playerAppLabel(modelData) || ""
+      readonly property var heldTrack: list.held[key] || null
+      readonly property string title: modelData.trackTitle || (heldTrack ? heldTrack.title : "")
+      readonly property string artist: modelData.trackArtist || (heldTrack ? heldTrack.artist : "")
 
       width: list.width
       height: inner.implicitHeight + Style.space(10)
@@ -84,7 +88,7 @@ Column {
           Label {
             theme: list.theme
             width: parent.width
-            text: row.modelData.trackTitle || row.appName || list.strings.t("media.mediaSource")
+            text: row.title || row.appName || list.strings.t("media.mediaSource")
             font.pixelSize: list.theme.bodySmall
             font.bold: row.selected
           }
@@ -93,7 +97,7 @@ Column {
             theme: list.theme
             width: parent.width
             dim: 1.5
-            text: [row.modelData.trackArtist, row.appName].filter(function(part) { return !!part }).join("  ·  ")
+            text: [row.artist, row.appName].filter(function(part) { return !!part }).join("  ·  ")
             font.pixelSize: list.theme.caption
             visible: text !== ""
           }

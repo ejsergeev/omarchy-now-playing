@@ -137,6 +137,8 @@ PanelKeyCatcher {
       display: popup.service.display
       playing: popup.playing && popup.open
       placeholder: popup.strings.t("media.nothingPlaying")
+      coverStyle: popup.service.preferences.coverStyle
+      onStyleCycleRequested: popup.service.cycleCoverStyle()
     }
 
     Timeline {
@@ -187,6 +189,7 @@ PanelKeyCatcher {
       theme: popup.theme
       strings: popup.strings
       players: popup.service.sourcePlayers
+      held: popup.service.heldSources
       activeKey: popup.service.activeKey
       onShowRequested: function(key) { popup.service.showSource(key) }
       onToggleRequested: function(key) { popup.service.toggleSource(key) }

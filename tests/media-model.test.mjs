@@ -224,6 +224,13 @@ test("activePlayer: the pick while playing or pinned, then what plays, played la
   picked.isPlaying = false
   assert.equal(M.activePlayer(s({ playing: null, lastPlayingKey: "last" })), last)
   assert.equal(M.activePlayer(s({ playing: null, lastPlayingKey: "gone" })), picked)
+  // Between tracks (no metadata, Stopped) a source stays shown: as the pick, or as what played last.
+  const skipping = player({ dbusName: "skipping", identity: "YouTube Music" })
+  const all = [picked, skipping]
+  const t = o => ({ players: all, byKey: M.indexByKey(all), streams: {}, playing: null, preferredKey: "", pinnedKey: "", lastPlayingKey: "", held: { skipping: { title: "Old", artist: "" } }, ...o })
+  assert.equal(M.activePlayer(t({ preferredKey: "skipping" })), skipping)
+  assert.equal(M.activePlayer(t({ lastPlayingKey: "skipping" })), skipping)
+  assert.equal(M.activePlayer(t({ lastPlayingKey: "skipping", held: {} })), picked)
   const bare = player({ dbusName: "bare", identity: "", desktopEntry: "", isPlaying: true })
   assert.equal(M.activePlayer({ ...s({ playing: null }), byKey: { bare }, preferredKey: "bare", players: [bare] }), bare)
 })
@@ -235,6 +242,8 @@ test("sourceRows: players with a track, by app then key", () => {
   const empty = player({ dbusName: "e", identity: "Chromium" })
   const appOnly = player({ dbusName: "org.mpris.MediaPlayer2.vlc", identity: "", trackArtist: "4" })
   assert.deepEqual(M.sourceRows([z, a2, empty, a1, appOnly]), [a1, a2, z, appOnly])
+  // Between tracks a source keeps its row.
+  assert.deepEqual(M.sourceRows([z, empty], { e: { title: "3", artist: "" } }), [empty, z])
 })
 
 test("cycleOrder and cycle", () => {

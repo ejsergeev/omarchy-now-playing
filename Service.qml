@@ -7,6 +7,7 @@ import qs.Commons
 import "components"
 import "lib/Display.js" as Display
 import "lib/Actions.js" as Actions
+import "lib/CoverStyle.js" as CoverStyle
 import "lib/MediaModel.js" as MediaModel
 import "lib/Streams.js" as Streams
 
@@ -21,6 +22,7 @@ Item {
 
   readonly property Translations strings: Translations { directory: Qt.resolvedUrl("i18n") }
   readonly property Metrics metrics: Metrics {}
+  readonly property Preferences preferences: Preferences {}
 
   // ── players and streams ─────────────────────────────────────────────────
 
@@ -48,14 +50,16 @@ Item {
   // What the popup shows.
   readonly property var activePlayer: MediaModel.activePlayer({
     players: players, byKey: playersByKey, streams: streamsByPlayer, playing: playingPlayer,
-    preferredKey: preferredPlayerKey, pinnedKey: pinnedPlayerKey, lastPlayingKey: lastPlayingKey,
+    preferredKey: preferredPlayerKey, pinnedKey: pinnedPlayerKey, lastPlayingKey: lastPlayingKey, held: heldSources,
   })
   readonly property string activeKey: MediaModel.playerKey(activePlayer)
   // What the bar button and the global keys act on: what plays, else what
   // played last, never a source only looked at in the popup.
   readonly property var controlPlayer: playingPlayer || playersByKey[lastPlayingKey] || activePlayer
-  // The popup's source list, in a fixed order.
-  readonly property var sourcePlayers: MediaModel.sourceRows(players)
+  // The popup's source list, in a fixed order. Sources between tracks keep
+  // their row under the track they showed last: key -> { title, artist }.
+  property var heldSources: ({})
+  readonly property var sourcePlayers: MediaModel.sourceRows(players, heldSources)
 
   onPlayingPlayerChanged: if (playingPlayer && !MediaModel.isProxyPlayer(playingPlayer)) lastPlayingKey = MediaModel.playerKey(playingPlayer)
   onPlayersChanged: syncPlayOrder()
@@ -71,11 +75,25 @@ Item {
 
   Instantiator {
     model: root.players
-    delegate: Connections {
-      required property var modelData
-      target: modelData
-      function onIsPlayingChanged() { root.playStateChanged(modelData) }
+    delegate: SourceWatch {
+      id: watch
+      onPlayingChanged: root.playStateChanged(watch.modelData)
+      onHeld: function(key, track) { root.holdSource(key, track) }
+      onReleased: function(key) { root.releaseSource(key) }
     }
+  }
+
+  function holdSource(key, track) {
+    var next = Object.assign({}, heldSources)
+    next[key] = track
+    heldSources = next
+  }
+
+  function releaseSource(key) {
+    if (!(key in heldSources)) return
+    var next = Object.assign({}, heldSources)
+    delete next[key]
+    heldSources = next
   }
 
   function playStateChanged(player) {
@@ -202,6 +220,11 @@ Item {
     interval: 2500
   }
 
+  // A click on the cover: the next way to show covers, kept for all sources.
+  function cycleCoverStyle() {
+    preferences.setCoverStyle(CoverStyle.next(preferences.coverStyle))
+  }
+
   function toggleShuffle() {
     if (activePlayer && activePlayer.shuffleSupported) activePlayer.shuffle = !activePlayer.shuffle
   }
@@ -299,7 +322,7 @@ Item {
   function metricsJson() {
     widgetMetrics = []
     metricsRequested()
-    return metrics.report({ players: players.length, playbackStreams: playbackStreams.length, widgets: widgetMetrics })
+    return metrics.report({ players: players.length, playbackStreams: playbackStreams.length, coverStyle: preferences.coverStyle, widgets: widgetMetrics })
   }
 
   ShellIpc {
