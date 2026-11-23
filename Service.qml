@@ -5,12 +5,30 @@ import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
 import "MediaModel.js" as MediaModel
 import qs.Commons
+import qs.Commons as Commons
 
 Item {
   id: root
 
+  Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+
   property var shell: null
   property string preferredPlayerKey: ""
+  // A player the user picked explicitly (source list, Tab, source switch).
+  // It stays shown even while paused, until the popup closes (clearPin).
+  property string pinnedPlayerKey: ""
+  // The source that played last, for keys and the bar when nothing plays.
+  property string lastPlayingKey: ""
+  onPlayingPlayerChanged: if (playingPlayer && !isProxyPlayer(playingPlayer)) lastPlayingKey = playerKey(playingPlayer)
+
+  // The popup closed: next time it shows what is playing.
+  function clearPin() {
+    pinnedPlayerKey = ""
+  }
+
+  // Global keys and the bar act on what plays, else on what played last,
+  // never on a source the user only looked at in the popup.
+  readonly property var controlPlayer: playingPlayer || playerForKey(lastPlayingKey) || activePlayer
   property var playerStartedAt: ({})
   property var pendingTrackOsd: null
   property int playSerial: 0
@@ -28,6 +46,9 @@ Item {
   readonly property var sourcePlayers: orderedSourcePlayers()
   readonly property var sourceCyclePlayers: orderedCycleSourcePlayers()
   readonly property var activePlayer: selectActivePlayer()
+  // What is actually sounding, whatever the popup is showing. The bar button
+  // follows this, so viewing a paused source doesn't change it.
+  readonly property var playingPlayer: oldestPlayingPlayer(true) || oldestPlayingPlayer(false)
   readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle || activePlayer.trackArtist)
   readonly property string title: activePlayer ? (activePlayer.trackTitle || "") : ""
   readonly property string artist: activePlayer ? (activePlayer.trackArtist || "") : ""
@@ -124,6 +145,7 @@ Item {
     }
 
     if (preferredPlayerKey && !alive[preferredPlayerKey]) preferredPlayerKey = ""
+    if (pinnedPlayerKey && !alive[pinnedPlayerKey]) pinnedPlayerKey = ""
 
     playSerial = serial
     playerStartedAt = next
@@ -199,8 +221,12 @@ Item {
       if (p && preferredPlayerKey && playerKey(p) === preferredPlayerKey && hasMetadata(p)) preferred = p
     }
 
-    if (preferred && preferred.isPlaying) return preferred
-    return oldestPlayingPlayer(true) || oldestPlayingPlayer(false) || MediaModel.idlePlayer(players, preferred, playerHasPlaybackStream)
+    var pinnedWithTrack = preferred && playerKey(preferred) === pinnedPlayerKey && (preferred.trackTitle || preferred.trackArtist)
+    if (preferred && (preferred.isPlaying || pinnedWithTrack)) return preferred
+    var last = playerForKey(lastPlayingKey)
+    return oldestPlayingPlayer(true) || oldestPlayingPlayer(false)
+      || (last && (last.trackTitle || last.trackArtist) ? last : null)
+      || MediaModel.idlePlayer(players, preferred, playerHasPlaybackStream)
   }
 
   function labelFor(player) {
@@ -258,9 +284,33 @@ Item {
 
   function selectPlayer(key) {
     var player = playerForKey(key)
-    if (!player || !hasMetadata(player)) return false
+    if (!player || !(player.trackTitle || player.trackArtist)) return false
     preferredPlayerKey = playerKey(player)
+    pinnedPlayerKey = preferredPlayerKey
     return true
+  }
+
+  // Plays one source and pauses every other playing one, so only one source
+  // sounds at a time; the started source is also shown in the popup.
+  function playExclusive(key) {
+    var player = playerForKey(key)
+    if (!player) return false
+    var started = player.isPlaying || playPlayer(player)
+    if (!started && player.canTogglePlaying) { player.togglePlaying(); started = true }
+    if (!started) return false
+    pauseOthers(key)
+    selectPlayer(key)
+    return true
+  }
+
+  // Pauses every playing source except the one with this key.
+  function pauseOthers(key) {
+    for (var i = 0; i < players.length; i++) {
+      var other = players[i]
+      // A proxy (playerctld) forwards to real players; pausing it could pause
+      // the source just started.
+      if (other && playerKey(other) !== key && other.isPlaying && !isProxyPlayer(other)) pausePlayer(other)
+    }
   }
 
   function playPlayer(player) {
@@ -299,13 +349,16 @@ Item {
     }
 
     index = (index + delta + list.length) % list.length
-    var current = activePlayer
+    var current = transferPlayback && playingPlayer ? playingPlayer : activePlayer
     var next = list[index]
     var currentWasPlaying = current && current.isPlaying
     var currentKey = playerKey(current)
     var nextKey = playerKey(next)
 
     preferredPlayerKey = nextKey
+    // From the keys (popup closed): don't pin; make it the target of the
+    // next play/next/previous key instead.
+    if (next && !next.isPlaying) lastPlayingKey = nextKey
 
     if (transferPlayback && currentWasPlaying && next && nextKey !== currentKey) {
       var nextWasPlaying = next.isPlaying
@@ -314,7 +367,7 @@ Item {
     }
 
     if (showFeedback !== false) Qt.callLater(function() {
-      root.showOsd(I18n.t("media.source"), "media-source", next)
+      root.showOsd(strings.t("media.source"), "media-source", next)
     })
 
     return true
@@ -329,6 +382,7 @@ Item {
       if (oldest) return oldest
     }
 
+    if (canHandleAction(controlPlayer, action)) return controlPlayer
     if (canHandleAction(activePlayer, action)) return activePlayer
 
     var list = sourcePlayers
@@ -342,27 +396,27 @@ Item {
   function runAction(action, showFeedback, targetKey) {
     var player = playerForAction(action, targetKey)
     var key = playerKey(player)
-    var actionLabel = I18n.t("media.playPause")
+    var actionLabel = strings.t("media.playPause")
     var iconName = "media"
     var beforeTrackSignature = trackSignature(player)
     var handled = false
 
     if (action === "next") {
-      actionLabel = I18n.t("media.next")
+      actionLabel = strings.t("media.next")
       iconName = "media-next"
       if (player && player.canGoNext) {
         player.next()
         handled = true
       }
     } else if (action === "previous") {
-      actionLabel = I18n.t("media.previous")
+      actionLabel = strings.t("media.previous")
       iconName = "media-previous"
       if (player && player.canGoPrevious) {
         player.previous()
         handled = true
       }
     } else if (action === "play") {
-      actionLabel = I18n.t("media.play")
+      actionLabel = strings.t("media.play")
       iconName = "media-play"
       if (player && player.canPlay) {
         player.play()
@@ -372,7 +426,7 @@ Item {
         handled = true
       }
     } else if (action === "pause") {
-      actionLabel = I18n.t("media.pause")
+      actionLabel = strings.t("media.pause")
       iconName = "media-pause"
       if (player && player.canPause) {
         player.pause()
@@ -382,7 +436,7 @@ Item {
         handled = true
       }
     } else if (action === "playPause") {
-      actionLabel = player && player.isPlaying ? I18n.t("media.pause") : I18n.t("media.play")
+      actionLabel = player && player.isPlaying ? strings.t("media.pause") : strings.t("media.play")
       iconName = player && player.isPlaying ? "media-pause" : "media-play"
       if (player && player.isPlaying && player.canPause) {
         player.pause()
@@ -396,7 +450,9 @@ Item {
       }
     }
 
-    if (handled && key) preferredPlayerKey = key
+    // An action on another source (row button, bar button) doesn't move the
+    // popup off a source the user picked.
+    if (handled && key && (!pinnedPlayerKey || pinnedPlayerKey === key)) preferredPlayerKey = key
     if (showFeedback !== false)
       scheduleOsd(actionLabel, iconName, player, handled && (action === "next" || action === "previous"), beforeTrackSignature)
     return handled
@@ -477,10 +533,10 @@ Item {
   PwObjectTracker { objects: root.defaultSink ? [root.defaultSink] : [] }
 
   function statusJson() {
-    var p = activePlayer
+    var p = controlPlayer
     return JSON.stringify({
       hasPlayer: p !== null,
-      hasMedia: root.hasMedia,
+      hasMedia: !!(p && (p.trackTitle || p.trackArtist)),
       playing: p ? !!p.isPlaying : false,
       identity: p ? (p.identity || "") : "",
       desktopEntry: p ? (p.desktopEntry || "") : "",

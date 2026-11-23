@@ -1,10 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "evgenii.media",
+  "id": "io.github.ejsergeev.now-playing",
   "name": "Now Playing",
   "version": "1.0.0",
   "author": "ejsergeev",
-  "description": "MPRIS media control service",
+  "description": "Now Playing button: play/pause icon, popup with art, timeline, transport, per-app volume and sources",
+  "license": "MIT",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,11 +17,9 @@
   },
   "barWidget": {
     "displayName": "Now Playing",
-    "description": "MPRIS now-playing with playback controls",
+    "description": "Now Playing button with a details popup",
     "category": "Media",
-    "allowMultiple": false
-  },
-  "omarchy": {
-    "clonedFrom": "omarchy.media"
+    "allowMultiple": false,
+    "defaultSection": "right"
   }
 }
