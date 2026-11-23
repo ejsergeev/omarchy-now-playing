@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
-import "MediaModel.js" as MediaModel
+import "lib/MediaModel.js" as MediaModel
 import qs.Commons
 import qs.Commons as Commons
 

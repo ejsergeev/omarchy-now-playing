@@ -1,0 +1,13 @@
+{"scenario": "play", "seconds": 20.0, "cpu_ms": 30, "child_cpu_ms": 20, "pss_kb": 301935, "spawns": 0, "processes": 0, "commands": [], "label": "baseline", "run": 1}
+{"scenario": "open-art", "seconds": 20.0, "cpu_ms": 590, "child_cpu_ms": 10, "pss_kb": 314124, "spawns": 0, "processes": 0, "commands": [], "label": "baseline", "run": 1}
+{"scenario": "open-art", "seconds": 20.0, "cpu_ms": 630, "child_cpu_ms": 20, "pss_kb": 313272, "spawns": 0, "processes": 0, "commands": [], "label": "baseline", "run": 2}
+{"scenario": "open-art", "label": "baseline", "median": {"cpu_ms": 610.0, "child_cpu_ms": 15.0, "pss_kb": 313698.0, "spawns": 0.0, "processes": 0.0}}
+{"scenario": "open-spectrum", "seconds": 20.0, "cpu_ms": 1280, "child_cpu_ms": 10, "pss_kb": 312776, "spawns": 0, "processes": 0, "commands": [], "label": "baseline", "run": 1}
+{"scenario": "open-spectrum", "seconds": 20.0, "cpu_ms": 1350, "child_cpu_ms": 20, "pss_kb": 313292, "spawns": 0, "processes": 0, "commands": [], "label": "baseline", "run": 2}
+{"scenario": "open-spectrum", "label": "baseline", "median": {"cpu_ms": 1315.0, "child_cpu_ms": 15.0, "pss_kb": 313034.0, "spawns": 0.0, "processes": 0.0}}
+{"scenario": "churn", "seconds": 15.2, "cpu_ms": 210, "child_cpu_ms": 50, "pss_kb": 305440, "spawns": 10, "processes": 24, "commands": ["/usr/bin/sh probe-art.sh"], "label": "baseline", "run": 1}
+{"scenario": "switch", "seconds": 15.7, "cpu_ms": 190, "child_cpu_ms": 190, "pss_kb": 305402, "spawns": 39, "processes": 98, "commands": ["/usr/bin/sh app-icon.sh", "/usr/bin/sh probe-art.sh", "dirname app-icon.sh", "dirname probe-art.sh"], "label": "baseline", "run": 1}
+{"scenario": "startup", "seconds": 15.0, "cpu_ms": 1840, "child_cpu_ms": 6400, "pss_kb": 281416, "spawns": 4, "processes": 14, "commands": ["/usr/bin/magick identify", "/usr/bin/sh -c", "/usr/bin/sh app-icon.sh", "/usr/bin/sh probe-art.sh", "cut -c1-16", "md5sum", "mkdir -p"], "label": "baseline", "run": 1}
+{"scenario": "startup", "seconds": 15.0, "cpu_ms": 1730, "child_cpu_ms": 6080, "pss_kb": 287853, "spawns": 4, "processes": 16, "commands": ["/usr/bin/magick identify", "/usr/bin/sh -c", "/usr/bin/sh app-icon.sh", "/usr/bin/sh probe-art.sh", "awk -v", "magick .org.chromium.Chromium.iOjfqE[0]", "stat -c"], "label": "baseline", "run": 1}
+{"scenario": "startup", "seconds": 15.0, "cpu_ms": 1880, "child_cpu_ms": 6050, "pss_kb": 279276, "spawns": 1, "processes": 1, "commands": ["/usr/bin/magick identify"], "label": "plugin-disabled", "run": 1}
+{"scenario": "startup", "seconds": 15.0, "cpu_ms": 1760, "child_cpu_ms": 5830, "pss_kb": 275417, "spawns": 1, "processes": 1, "commands": ["/usr/bin/magick identify"], "label": "plugin-disabled", "run": 1}
