@@ -5,15 +5,16 @@
 # at the same size; brightness becomes opacity, so an icon drawn on a dark
 # plate (cliamp's equaliser) keeps its artwork and loses the plate; painted
 # in COLOR (the theme foreground). Cached per icon file, mtime and colour.
-color="$1"; shift
-. "$(dirname "$0")/icons.sh"
-src=$(find_icon "$@")
-[ -n "$src" ] || exit 1
-cache="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-now-playing/icons"
-mkdir -p "$cache" || exit 1
-# v3: bump when the pipeline below changes, so old cached icons are redone.
-key=$(printf 'v3|%s|%s|%s' "$src" "$(stat -c %Y "$src" 2>/dev/null)" "$color" | md5sum | cut -c1-16)
-out="$cache/$key.png"
+color=$1
+shift
+# shellcheck source=scripts/icons.sh
+. "${0%/*}/icons.sh"
+src=$(find_icon "$@") || exit 1
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-now-playing/icons
+[ -d "$cache" ] || mkdir -p "$cache" || exit 1
+# v4: bump when the pipeline below or the key changes, so old icons are redone.
+sum=$(printf 'v4|%s|%s|%s' "$src" "$(stat -c %Y "$src" 2>/dev/null)" "$color" | cksum)
+out="$cache/${sum%% *}-${sum##* }.png"
 if [ ! -s "$out" ]; then
   tmp="$out.$$.png"
   # brightness x alpha -> opacity (drops dark plates and their borders),

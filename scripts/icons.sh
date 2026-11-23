@@ -1,34 +1,35 @@
-# Shared helpers for the plugin's shell scripts.
+# Shared by the plugin's scripts; sourced, not run.
 
-# find_icon NAME... — prints the first app icon file found for the names, in
-# the user's, XDG, Flatpak and pixmaps icon locations (hicolor, largest first).
+# find_icon NAME... prints the first icon file found for the names: a
+# hicolor app icon in the user's, XDG and Flatpak data directories (largest
+# size first), else a pixmap. An absolute path is taken as it is. Fails when
+# there is none. Only shell builtins: it runs on every probe.
 find_icon() {
-  icon=""
+  data_dirs="${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+  data_dirs="$data_dirs:$HOME/.local/share/flatpak/exports/share:/var/lib/flatpak/exports/share"
   for name in "$@"; do
-    case "$name" in
-      /*) [ -f "$name" ] && icon="$name" ;;
-      *)
-        dirs="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
-        old_ifs=$IFS; IFS=:
-        for d in ${XDG_DATA_DIRS:-/usr/local/share:/usr/share}; do dirs="$dirs:$d/icons"; done
-        IFS=$old_ifs
-        dirs="$dirs:$HOME/.local/share/flatpak/exports/share/icons:/var/lib/flatpak/exports/share/icons"
-        old_ifs=$IFS; IFS=:
-        for base in $dirs; do
-          IFS=$old_ifs
-          for theme in hicolor; do
-            for size in 512x512 256x256 192x192 128x128 scalable 96x96 64x64 48x48; do
-              for ext in png svg; do
-                f="$base/$theme/$size/apps/$name.$ext"
-                [ -f "$f" ] && { icon="$f"; break 4; }
-              done
-            done
-          done
-        done
-        [ -z "$icon" ] && for ext in png svg; do [ -f "/usr/share/pixmaps/$name.$ext" ] && { icon="/usr/share/pixmaps/$name.$ext"; break; }; done
+    case $name in
+      /*)
+        if [ -f "$name" ]; then printf '%s\n' "$name"; return 0; fi
+        continue
         ;;
     esac
-    [ -n "$icon" ] && break
+    old_ifs=$IFS
+    IFS=:
+    for dir in $data_dirs; do
+      IFS=$old_ifs
+      for size in 512x512 256x256 192x192 128x128 scalable 96x96 64x64 48x48; do
+        for ext in png svg; do
+          file="$dir/icons/hicolor/$size/apps/$name.$ext"
+          if [ -f "$file" ]; then printf '%s\n' "$file"; return 0; fi
+        done
+      done
+    done
+    IFS=$old_ifs
+    for ext in png svg; do
+      file="/usr/share/pixmaps/$name.$ext"
+      if [ -f "$file" ]; then printf '%s\n' "$file"; return 0; fi
+    done
   done
-  [ -n "$icon" ] && printf '%s\n' "$icon"
+  return 1
 }

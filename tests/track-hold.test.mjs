@@ -36,3 +36,12 @@ test("track identity, probe keys and retries", () => {
   assert.equal(H.retryArt(2), true)
   assert.equal(H.retryArt(3), false)
 })
+
+test("only a definite near match is the placeholder", () => {
+  assert.equal(H.isPlaceholder("0.0123"), true)
+  assert.equal(H.isPlaceholder("1.2e-05"), true)
+  assert.equal(H.isPlaceholder("0.08"), false)
+  assert.equal(H.isPlaceholder("0.31"), false)
+  assert.equal(H.isPlaceholder(""), false)
+  assert.equal(H.isPlaceholder("garbage"), false)
+})

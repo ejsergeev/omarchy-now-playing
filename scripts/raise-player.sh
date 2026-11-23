@@ -4,9 +4,13 @@
 # Among the player process's windows it prefers the one whose title contains
 # the track title, then one whose class names the site (web apps such as
 # chrome-music.youtube.com__-Default), then any of them.
-bus="$1"; title="$2"; host="$3"
-pid=$(busctl --user call org.freedesktop.DBus / org.freedesktop.DBus \
-  GetConnectionUnixProcessID s "$bus" 2>/dev/null | awk '{print $2}')
+bus=$1
+title=${2:-}
+host=${3:-}
+# "u 1234": the reply's type and the process id.
+reply=$(busctl --user call org.freedesktop.DBus / org.freedesktop.DBus \
+  GetConnectionUnixProcessID s "$bus" 2>/dev/null)
+pid=${reply#* }
 clients=$(hyprctl clients -j 2>/dev/null) || exit 1
 addr=$(printf '%s' "$clients" | jq -r --arg pid "$pid" --arg title "$title" --arg host "$host" '
   [ .[] | select($pid != "" and (.pid | tostring) == $pid) ] as $own

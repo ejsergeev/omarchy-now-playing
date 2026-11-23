@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Q4: every catalog in i18n/ has exactly the keys of en.json, each value is a
-// non-empty string with the same %N placeholders, and the QML uses exactly
+// non-empty string with the same %N placeholders, and the code uses exactly
 // those keys (no missing, no unused).
 import { readFileSync, readdirSync } from "node:fs"
 import { dirname, join, relative } from "node:path"
@@ -39,8 +39,12 @@ function qmlFiles(dir) {
 
 const used = new Set()
 for (const file of qmlFiles(root)) {
-  for (const m of readFileSync(file, "utf8").matchAll(/strings\.t\("([^"]+)"/g)) {
-    used.add(m[1])
+  const text = readFileSync(file, "utf8")
+  // Keys travel through tables and helpers (lib/Display.js moodKey), so any
+  // string literal that is a catalog key counts as a use...
+  for (const m of text.matchAll(/"([A-Za-z0-9_.]+)"/g)) if (m[1] in en) used.add(m[1])
+  // ...and a literal key given to t() must exist.
+  for (const m of text.matchAll(/\.t\("([^"]+)"/g)) {
     if (!(m[1] in en)) problems.push(`${relative(root, file)}: uses unknown key ${m[1]}`)
   }
 }

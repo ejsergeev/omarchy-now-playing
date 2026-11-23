@@ -158,9 +158,8 @@ QtObject {
     timeout: TrackHold.PROBE_TIMEOUT_MS
     metrics: display.metrics
     onFinished: function(tag, ok, output) {
-      // Only a definite "this is the app icon" rejects; failures show the art.
-      var isArt = !(ok && output === "placeholder")
-      if (ok) display.remember(tag.key, isArt)
+      var isArt = !(ok && TrackHold.isPlaceholder(output))
+      if (ok && output !== "") display.remember(tag.key, isArt)
       if (display.probing === tag.key) display.probing = ""
       display.accept(tag.url, isArt)
     }
