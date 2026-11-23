@@ -322,7 +322,8 @@ Item {
   function metricsJson() {
     widgetMetrics = []
     metricsRequested()
-    return metrics.report({ players: players.length, playbackStreams: playbackStreams.length, coverStyle: preferences.coverStyle, widgets: widgetMetrics })
+    return metrics.report({ players: players.length, playbackStreams: playbackStreams.length, coverStyle: preferences.coverStyle,
+      shown: { key: display.shownKey, title: display.title, hasMedia: display.hasMedia }, widgets: widgetMetrics })
   }
 
   ShellIpc {

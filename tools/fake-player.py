@@ -10,7 +10,8 @@ once, so the bench scenarios can drive track changes without touching the
 user's real players. Art, when a track has it, is a small PNG generated with
 ImageMagick into $XDG_RUNTIME_DIR, so the plugin probes it like a browser's.
 With --skip-gap, a skip first reports Stopped with no metadata for that long,
-as YouTube Music in Chromium does.
+as YouTube Music in Chromium does. Stop ends the session the way closing a
+browser tab does: Stopped, with no metadata, for good.
 """
 
 import argparse
@@ -182,8 +183,12 @@ class FakePlayer:
             self.skip(-1)
         elif method == "Play":
             self.set_playing(True)
-        elif method == "Pause" or method == "Stop":
+        elif method == "Pause":
             self.set_playing(False)
+        elif method == "Stop":
+            self.playing = False
+            self.blank = True
+            self.changed("Metadata", "PlaybackStatus")
         elif method == "PlayPause":
             self.set_playing(not self.playing)
         elif method in ("Seek", "SetPosition"):
