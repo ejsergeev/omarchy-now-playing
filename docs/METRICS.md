@@ -11,12 +11,15 @@ number here can be reproduced with the tools in `tools/` and `bench/`.
 | `node bench/selection.bench.mjs` | one selection pass: every binding that re-evaluates when a player or a PipeWire node changes (P3) |
 | `node bench/spectrum.bench.mjs` | one ASCII spectrum tick (P4) |
 | `tools/lint.sh` | qmllint, shellcheck, unit tests with coverage, i18n, structure, manifest (Q1–Q6) |
-| `qs -p /usr/share/omarchy/shell ipc call media metrics` | the plugin's own counters, when the shell runs with `NOW_PLAYING_METRICS=1` (M2, L1, S1–S3) |
+| `qs -p /usr/share/omarchy/shell ipc call media metrics` | the plugin's own counters (spawns, cache hits, popup build time) and object counts per bar; counting starts with the first call (M2, L1, S1–S3) |
 
 `tools/measure.py` drives silent fake MPRIS players (`tools/fake-player.py`)
 so scenarios are repeatable and never touch real music. A fake player must be
 the only one playing; `--pause-others` pauses the rest for the run and
-resumes them after. Raw results are kept in `docs/metrics/*.jsonl`.
+resumes them after. It puts the popup in the state a scenario needs, and
+repeats an `open-*` run whose popup closed during the window (a click
+anywhere else closes it, and a closed popup costs nothing). Raw results are
+kept in `docs/metrics/*.jsonl`.
 
 Scenarios:
 
@@ -58,27 +61,53 @@ Qt 6, aarch64, Node 26. CPU is in milliseconds of CPU time per window, so
 
 ## Results
 
-Baseline is version 1.0.0 (commit `d285467`), measured 2026-11-23.
+Baseline is version 1.0.0 (commit `d285467`), final is this branch, both
+measured on 2026-11-23 on the same machine and shell session conditions.
 
-| # | Metric | Baseline (1.0.0) | Final |
-|---|---|---|---|
-| P1 | CPU, `play`, 20 s | 30 ms | |
-| P2 | CPU, `open-art`, 20 s | 610 ms (3.0%) | |
-| P2 | CPU, `open-spectrum`, 20 s | 1315 ms (6.6%) | |
-| P3 | selection pass | 84.4 µs | |
-| P4 | spectrum tick | 106.5 µs | |
-| M1 | PSS with − without plugin, after startup | ≈ 7.3 MB (284.6 vs 277.3 MB, noisy) | |
-| M2 | objects per bar, closed / open | ≈ 290 / ≈ 290 (eager: built at startup on every bar; 217 of them the spectrum) | |
-| S1 | processes at startup (1 bar) | 3 spawns, 14 processes (`command -v magick`, `app-icon.sh`, `probe-art.sh` and their children) | |
-| S2 | `churn`: 20 changes, 10 with art | 10 spawns, 24 processes | |
-| S3 | `switch`: 20 switches | 39 spawns, 98 processes | |
-| L1 | first popup open | not measurable (no counters in 1.0.0) | |
-| Q1 | coverage | `MediaModel.js` 100% lines / 98% branches (tests added after 1.0.0); no other logic testable | |
-| Q2 | qmllint | 80 warnings (53 unqualified, 27 missing-property) | |
-| Q3 | shellcheck | not run (not installed) | |
-| Q4 | i18n | 0 problems | |
-| Q5 | structure | 2 files over 350 lines (`BarWidget.qml` 1393, `Service.qml` 609), 1 function over 40 (`runAction`, 64), 3 repeated blocks | |
-| Q6 | validate | passes | |
+| # | Metric | 1.0.0 | Final | Target |
+|---|---|---|---|---|
+| P1 | CPU, `play` (popup closed), 20 s | 30 ms | 50 ms | met: both are noise; neither runs a timer while the popup is closed |
+| P2 | CPU, `open-art`, 20 s | 610 ms | 555 ms (−9%) | **not met**, see below |
+| P2 | CPU, `open-spectrum`, 20 s | 1315 ms | 1185 ms (−10%) | **not met**, see below |
+| P3 | selection, full pass (players or nodes change) | 29.1 µs | 8.4 µs (3.5×) | not met for the full pass |
+| P3 | selection, play/pause (the frequent change) | 28.1 µs | 1.1 µs (25×) | met |
+| P4 | spectrum tick | 5.6 µs | 0.06–0.15 µs (≈ 40–90×) | met |
+| M1 | shell PSS with − without plugin, after startup | ≈ 7.3 MB | ≈ 5.0 MB | not provable: PSS noise is ±3 MB; M2 is the precise measure |
+| M2 | objects per bar, popup never opened | 380 (41 bar + 339 popup, built at startup on every bar) | 25 (popup not built) | −93%; the 25 are the host's BarIconButton and panel |
+| M2 | objects per bar, popup open | 339 | 135 | −60%; most of the rest are host controls' insides |
+| M3 | decoded covers | ≤ 2, box-sized | ≤ 2, box-sized, none before the first open | met |
+| S1 | processes at startup (1 bar) | 3 spawns, 14 processes | 1 spawn, 6–7 processes (the app icon) | met |
+| S2 | `churn`: 20 changes, 10 with art | 10 spawns, 24 processes | 9 spawns, 18 processes | met: one probe per new cover is the floor |
+| S3 | `switch`: 20 switches between 2 players | 39 spawns, 98 processes, 190 ms child CPU | 2 spawns, 4 processes, 10 ms | met: only the first look at a player runs anything |
+| L1 | first popup open | not measurable | 20–40 ms; reopening keeps the built popup | about met |
+| Q1 | coverage of `lib/*.js` | `MediaModel.js` only, 100% / 98% | 8 modules, 100% lines / 98.3% branches, 46 tests | met |
+| Q2 | qmllint warnings | 80 | 0 | met |
+| Q3 | shellcheck | not run | not run | open: shellcheck is not installed here |
+| Q4 | i18n problems | 0 | 0 | met |
+| Q5 | structure | 2 files over 350 lines (largest 1393), 1 function over 40, 3 repeated blocks | 0, 0, 0 (largest file 322 lines) | met |
+| Q6 | `omarchy plugin validate` | passes | passes | met |
 
-Each bar has its own `BarWidget`, so with more than one monitor everything in
-M2 and S1–S3 was multiplied by the number of bars.
+P3 and P4 baselines are lower than first recorded (84 and 106 µs): the first
+bench ran code in a separate V8 context, which slowed both versions alike.
+Both columns above run in the same context.
+
+**Why P2 is not met.** With the popup open and nothing playing, the shell
+spends nothing: 0 ms over 10 s. Playing, the cost is frames, not the plugin's
+JavaScript. The host's `PanelSlider` animates its fill and knob for 140 ms on
+every value change, and the seek bar's value changes once a second, so each
+second draws a short animation at the display's refresh rate. With the seek
+bar's value frozen as an experiment, `open-art` drops to 105 ms and
+`open-spectrum` to 745 ms. The plugin keeps `PanelSlider` so the seek bar
+stays exactly the shell's own; the fix belongs in the shell (not animating
+small programmatic steps). The spectrum's own JavaScript went from 5.6 µs to
+about 0.1 µs a tick, which is invisible next to the frame cost.
+
+**Why the full P3 pass is 3.5×, not 5×.** What is left is matching stream
+labels to player labels by substring, which is inherent to how streams are
+named. It now runs only when players or streams appear, go or are renamed;
+play/pause, the change that happens all the time, no longer runs it.
+
+**Not measured here.** Media keys still reach the plugin through
+`omarchy-shell media …`, one process per key press: the shell routes key
+presses in-process only to `omarchy.media` and its clones, and the plugin
+does not claim to be one.
