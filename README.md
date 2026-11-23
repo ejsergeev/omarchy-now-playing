@@ -34,13 +34,17 @@ timeline, transport, per-app volume and every media source on the machine.
 - **Covers that never blink.** The next cover decodes off screen and fades in
   over the old one. The app icon Chromium serves as "art" between tracks is
   recognised and skipped.
+- **Steady through skips.** Players blank their metadata for a moment between
+  tracks (YouTube Music even reports Stopped); the popup, the track and the
+  source list ride that out instead of jumping or closing.
 - **Three ways to show a cover.** Click the cover to step through the cover
   itself, a duotone in your theme's colours, and the ASCII spectrum. The
   choice applies to every source and is kept across restarts.
 - **An ASCII spectrum when there is no art.** An LED-style analyser fills the
   cover box, shaped by the track's name and dancing while it plays.
 - **Matching app icons.** Every source icon is normalised to the same size and
-  painted in your theme's colour. Click it to jump to the player's window.
+  painted in your theme's colour. Click it to jump to the player's window,
+  including the terminal a player such as cliamp runs in.
 - **Keyboard first.** Opens with a key and drives entirely from the keyboard.
 - **Feels like Omarchy.** Built on Omarchy's own `KeyboardPanel` and
   `BarIconButton`, follows the theme live, honours `omarchy toggle animations`,
@@ -48,13 +52,15 @@ timeline, transport, per-app volume and every media source on the machine.
 
 ## Screenshots
 
-| Artwork and controls | No artwork: ASCII spectrum |
+| Artwork and controls | Duotone in the theme's colours |
 |---|---|
-| <img src="docs/screenshots/popup.png" alt="Popup with artwork" width="400"> | <img src="docs/screenshots/ascii.png" alt="Popup with the ASCII spectrum placeholder" width="400"> |
+| <img src="docs/screenshots/popup.png" alt="Popup with the cover art" width="400"> | <img src="docs/screenshots/duotone.png" alt="Popup with the cover as a duotone in the theme's colours" width="400"> |
 
-| Several sources | In the bar |
+| ASCII spectrum (and tracks without art) | Several sources |
 |---|---|
-| <img src="docs/screenshots/sources.png" alt="Popup listing several media sources" width="400"> | <img src="docs/screenshots/bar.png" alt="The Now Playing icon in the Omarchy bar" width="400"> |
+| <img src="docs/screenshots/ascii.png" alt="Popup with the ASCII spectrum in the cover box" width="400"> | <img src="docs/screenshots/sources.png" alt="Popup listing several media sources" width="400"> |
+
+<p align="center"><img src="docs/screenshots/bar.png" alt="The Now Playing icon in the Omarchy bar" width="400"></p>
 
 ## Install
 
@@ -118,9 +124,11 @@ Letter keys act by their letter on Latin layouts (Dvorak, Colemak, …) and by
 their place on the keyboard on any other layout (Russian, Greek, …), so they
 work without switching layout.
 
-The source list: click a row to show that source (playback is unchanged); its
-▶ plays it and pauses the others; its ❚❚ just pauses it. The popup returns to
-what is playing every time it opens.
+With the mouse: click the cover to switch between the cover, the duotone and
+the spectrum; click the app icon in the corner to bring the player's window
+forward. In the source list, click a row to show that source (playback is
+unchanged); its ▶ plays it and pauses the others; its ❚❚ just pauses it. The
+popup returns to what is playing every time it opens.
 
 ## How it works
 
@@ -128,8 +136,8 @@ what is playing every time it opens.
 |---|---|
 | `Service.qml` | All state, once per shell: tracks MPRIS players, picks the active and the playing source, holds the shown track, per-app volume, and answers the `media` IPC target used by the media keys. |
 | `BarWidget.qml` | The bar icon on each monitor. Its popup (`components/NowPlayingPopup.qml`) is built the first time it opens. |
-| `components/` | The popup's parts, and the service's helpers: `TrackDisplay` holds metadata through the brief blanks players send between tracks and checks new covers; `AppIcon` and `ScriptRunner` run the scripts, cached. |
-| `lib/` | The logic, as plain JavaScript with no QML in it: which player to show and act on, streams, the hold rules, the spectrum, the keys. Tested in Node. |
+| `components/` | The popup's parts, and the service's helpers: `TrackDisplay` holds metadata through the brief blanks players send between tracks and checks new covers; `SourceWatch` keeps a source in the list through such a blank; `AppIcon` and `ScriptRunner` run the scripts, cached; `Preferences` keeps the cover style. |
+| `lib/` | The logic, as plain JavaScript with no QML in it: which player to show and act on, streams, the hold rules, cover styles, the spectrum, the keys. Tested in Node. |
 | `scripts/probe-art.sh` | Measures how close new local art is to the player's own icon; a near match is Chromium's placeholder, not a cover. |
 | `scripts/app-icon.sh` | Turns any app icon into a single-colour glyph of a fixed size: brightness becomes opacity, the result is trimmed and centred. Cached in `~/.cache/omarchy-now-playing`. |
 | `scripts/raise-player.sh` | Finds and focuses the player's Hyprland window when the player cannot raise itself over MPRIS. |
@@ -138,6 +146,10 @@ what is playing every time it opens.
 
 Volume goes to the player's PipeWire stream rather than MPRIS, because browsers
 report an MPRIS volume they never apply.
+
+The plugin keeps two things on disk: the chosen cover style in
+`~/.local/state/omarchy-now-playing/preferences.json`, and the normalised app
+icons in `~/.cache/omarchy-now-playing`.
 
 ## Translations
 
