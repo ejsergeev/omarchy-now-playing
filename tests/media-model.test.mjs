@@ -300,3 +300,8 @@ test("performAction uses what the player allows, toggling as a fallback", () => 
   assert.deepEqual(run({}, "stop"), [false, ""])
   assert.equal(M.performAction(null, "play"), false)
 })
+
+test("stream label keys stay right past the memo's bound", () => {
+  for (let i = 0; i < 1200; i++) assert.equal(M.streamLabelKey(`PipeWire ALSA [App ${i}]`), `app${i}`)
+  assert.equal(M.streamLabelKey("pipewire alsa [alsa playback [x]]"), "x")
+})

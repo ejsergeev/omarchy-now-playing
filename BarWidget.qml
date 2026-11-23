@@ -89,6 +89,7 @@ BarWidget {
     target: root.service
     function onMetricsRequested() {
       root.service.addWidgetMetrics({
+        open: root.popupOpen,
         objects: root.service.metrics.objectCount(root, [panel]),
         popupObjects: root.service.metrics.objectCount(panel.loadedContent, []),
       })

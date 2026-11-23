@@ -158,8 +158,10 @@ QtObject {
     timeout: TrackHold.PROBE_TIMEOUT_MS
     metrics: display.metrics
     onFinished: function(tag, ok, output) {
+      // A finished probe is final for this file on this track, even "cannot
+      // tell" (no icon to compare with); a failed or hung one is not.
       var isArt = !(ok && TrackHold.isPlaceholder(output))
-      if (ok && output !== "") display.remember(tag.key, isArt)
+      if (ok) display.remember(tag.key, isArt)
       if (display.probing === tag.key) display.probing = ""
       display.accept(tag.url, isArt)
     }

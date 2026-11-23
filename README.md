@@ -111,7 +111,9 @@ o.bind("SUPER + CTRL + code:58", "Now Playing", { panel = "io.github.ejsergeev.n
 | `Tab` / `Shift` `Tab` | next / previous source |
 | `Esc` | close |
 
-Letter keys work on Russian and other layouts too.
+Letter keys act by their letter on Latin layouts (Dvorak, Colemak, …) and by
+their place on the keyboard on any other layout (Russian, Greek, …), so they
+work without switching layout.
 
 The source list: click a row to show that source (playback is unchanged); its
 ▶ plays it and pauses the others; its ❚❚ just pauses it. The popup returns to
@@ -121,11 +123,13 @@ what is playing every time it opens.
 
 | Piece | What it does |
 |---|---|
-| `Service.qml` | Tracks MPRIS players, picks the active and the playing source, answers the `media` IPC target used by the media keys. |
-| `BarWidget.qml` | The bar icon and the popup. Holds metadata through the brief blanks players send between tracks, so nothing jumps. |
-| `probe-art.sh` | Compares new local art with the player's own icon and rejects a near match: that is Chromium's placeholder, not a cover. |
-| `app-icon.sh` | Turns any app icon into a single-colour glyph of a fixed size: brightness becomes opacity, the result is trimmed and centred. Cached in `~/.cache/omarchy-now-playing`. |
-| `raise-player.sh` | Finds and focuses the player's Hyprland window when the player cannot raise itself over MPRIS. |
+| `Service.qml` | All state, once per shell: tracks MPRIS players, picks the active and the playing source, holds the shown track, per-app volume, and answers the `media` IPC target used by the media keys. |
+| `BarWidget.qml` | The bar icon on each monitor. Its popup (`components/NowPlayingPopup.qml`) is built the first time it opens. |
+| `components/` | The popup's parts, and the service's helpers: `TrackDisplay` holds metadata through the brief blanks players send between tracks and checks new covers; `AppIcon` and `ScriptRunner` run the scripts, cached. |
+| `lib/` | The logic, as plain JavaScript with no QML in it: which player to show and act on, streams, the hold rules, the spectrum, the keys. Tested in Node. |
+| `scripts/probe-art.sh` | Measures how close new local art is to the player's own icon; a near match is Chromium's placeholder, not a cover. |
+| `scripts/app-icon.sh` | Turns any app icon into a single-colour glyph of a fixed size: brightness becomes opacity, the result is trimmed and centred. Cached in `~/.cache/omarchy-now-playing`. |
+| `scripts/raise-player.sh` | Finds and focuses the player's Hyprland window when the player cannot raise itself over MPRIS. |
 | `i18n/` | One catalog per Omarchy language. |
 
 Volume goes to the player's PipeWire stream rather than MPRIS, because browsers
@@ -150,8 +154,15 @@ omarchy plugin validate "$PWD/omarchy-now-playing"
 omarchy plugin enable io.github.ejsergeev.now-playing
 ```
 
-Edits under `~/.config/omarchy/plugins/` reload on save. If one doesn't,
-run `omarchy restart shell`.
+After editing, run `omarchy restart shell` to load the change.
+
+`tools/lint.sh` runs every check the plugin is held to: qmllint, shellcheck
+(`pacman -S shellcheck`), the unit tests with coverage (Node, no packages),
+the translation and structure checks, and `omarchy plugin validate`.
+`node bench/selection.bench.mjs` and `node bench/spectrum.bench.mjs` time the
+hot paths, and `tools/measure.py` measures the plugin inside the running
+shell with silent fake players. [docs/METRICS.md](docs/METRICS.md) has the
+metrics, the targets and the current numbers.
 
 ## Credits
 

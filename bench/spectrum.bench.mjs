@@ -9,3 +9,9 @@ const baseline = load("bench/baseline/Spectrum.js")
 const a = { title: TITLE, artist: ARTIST, bars: 8, rows: 8, live: true, levels: [], peaks: [], tick: 0 }
 const results = { baseline: bench("baseline spectrum tick (8×8)", () => baseline.step(a)) }
 export default results
+
+const Spectrum = load("lib/Spectrum.js")
+const meter = Spectrum.create(Spectrum.BARS, Spectrum.ROWS)
+Spectrum.reset(meter, TITLE, ARTIST)
+results.rewrite = bench("rewrite spectrum tick (8×8)", () => Spectrum.step(meter, true))
+console.log(`speed-up: ${(results.baseline / results.rewrite).toFixed(1)}×`)

@@ -19,6 +19,8 @@ For each run it prints one JSON line with:
   spawns        processes quickshell started for this plugin
   processes     all processes in those spawns' trees (sh, magick, ...)
   metrics       the plugin's own counters, when it exposes `media metrics`
+  valid         open-* only: the popup was still open at the end (a run
+                where it closed early is repeated)
 
 The plugin's cost is the difference between a run with the plugin enabled and
 one with it disabled; run both. Scenarios that need a fake player refuse to
@@ -188,8 +190,20 @@ class FakePlayers:
 
 # ── scenarios ──────────────────────────────────────────────────────────────
 
-def toggle_popup():
-    subprocess.run(["omarchy-shell", "shell", "toggle", PLUGIN_ID, "{}"], capture_output=True)
+def popup_open():
+    widgets = (plugin_metrics() or {}).get("widgets") or []
+    return any(w.get("open") for w in widgets)
+
+
+def set_popup(want_open):
+    """Opens or closes the popup, whatever state it is in (a click on the bar
+    may have opened it), and waits until it is so."""
+    for _ in range(20):
+        if popup_open() == want_open:
+            return
+        subprocess.run(["omarchy-shell", "shell", "toggle", PLUGIN_ID, "{}"], capture_output=True)
+        time.sleep(0.25)
+    raise RuntimeError("could not " + ("open" if want_open else "close") + " the popup")
 
 
 def scenario(name, seconds, players):
@@ -206,9 +220,9 @@ def scenario(name, seconds, players):
         def setup():
             players.start("npbench", art)
             time.sleep(1.5)        # let the plugin settle on the new player
-            toggle_popup()
+            set_popup(True)
             time.sleep(1.0)        # first open builds the popup: keep it out of the window
-        return setup, (lambda: time.sleep(seconds)), toggle_popup
+        return setup, (lambda: time.sleep(seconds)), (lambda: set_popup(False))
 
     if name == "churn":
         state = {}
@@ -260,6 +274,8 @@ def run_once(name, seconds, pause_others):
 
     setup, act, teardown = scenario(name, seconds, players)
     try:
+        if name != "startup" and plugin_metrics() is not None:
+            set_popup(False)
         setup()
         pid = shell_pid()
         before = cpu_ticks(pid)
@@ -299,6 +315,13 @@ def run_once(name, seconds, pause_others):
             mpris(bus, "Play")
 
 
+def popup_stayed_open(result):
+    """An open-* run counts only if the popup was still open when the window
+    ended: a click elsewhere closes it, and a closed popup costs nothing."""
+    widgets = (result.get("metrics") or {}).get("widgets") or []
+    return any(w.get("open") for w in widgets)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Measure the Now Playing plugin.")
     parser.add_argument("scenario")
@@ -309,12 +332,18 @@ def main():
     args = parser.parse_args()
 
     results = []
-    for i in range(args.runs):
+    attempts = 0
+    while len(results) < args.runs:
+        attempts += 1
         r = run_once(args.scenario, args.seconds, args.pause_others)
         r["label"] = args.label
-        r["run"] = i + 1
+        r["run"] = len(results) + 1
+        r["valid"] = popup_stayed_open(r) if args.scenario.startswith("open-") else True
         print(json.dumps(r, ensure_ascii=False), flush=True)
-        results.append(r)
+        if r["valid"]:
+            results.append(r)
+        elif attempts >= args.runs * 3:
+            raise SystemExit("the popup keeps closing during the window; is something clicking outside it?")
         time.sleep(1)
     if args.runs > 1:
         keys = ("cpu_ms", "child_cpu_ms", "pss_kb", "spawns", "processes")
