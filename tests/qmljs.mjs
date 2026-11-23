@@ -25,15 +25,16 @@ export function load(relativePath) {
     return /^\.pragma\s/.test(line) ? "" : line
   })
 
-  // Top-level declarations are collected by listing them after the code, so
-  // `const` and `function` both come back, and line numbers stay intact for
-  // coverage and stack traces.
+  // The file runs as the body of a function whose parameters are its
+  // imports, in this realm (so its arrays are this realm's arrays), and
+  // returns its top-level declarations. The header shares the first line, so
+  // line numbers stay intact for coverage and stack traces.
   const source = lines.join("\n")
   const names = [...source.matchAll(/^(?:function\s+(\w+)|(?:const|var|let)\s+(\w+))/gm)]
     .map(m => m[1] || m[2])
-  const context = vm.createContext({ ...imports, Math, Date, String, Number, Array, Object, JSON, isFinite })
-  const script = new vm.Script(`${source}\n;({ ${names.join(", ")} })`, { filename: file })
-  const module = script.runInContext(context)
+  const header = `(function (${Object.keys(imports).join(", ")}) {`
+  const script = new vm.Script(`${header}${source}\nreturn { ${names.join(", ")} }\n})`, { filename: file })
+  const module = script.runInThisContext()(...Object.values(imports))
   cache.set(file, module)
   return module
 }

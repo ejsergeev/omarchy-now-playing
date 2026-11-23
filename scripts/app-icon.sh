@@ -6,7 +6,7 @@
 # plate (cliamp's equaliser) keeps its artwork and loses the plate; painted
 # in COLOR (the theme foreground). Cached per icon file, mtime and colour.
 color="$1"; shift
-. "$(dirname "$0")/lib/icons.sh"
+. "$(dirname "$0")/icons.sh"
 src=$(find_icon "$@")
 [ -n "$src" ] || exit 1
 cache="${XDG_CACHE_HOME:-$HOME/.cache}/omarchy-now-playing/icons"

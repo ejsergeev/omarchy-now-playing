@@ -1,609 +1,322 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
-import "lib/MediaModel.js" as MediaModel
 import qs.Commons
-import qs.Commons as Commons
+import "components"
+import "lib/Display.js" as Display
+import "lib/Actions.js" as Actions
+import "lib/MediaModel.js" as MediaModel
+import "lib/Streams.js" as Streams
 
+// The plugin's state, one per shell and shared by the bar on every monitor:
+// which player plays and which one the popup shows (lib/MediaModel.js), the
+// track held steady for display with its cover and app icon, the shown
+// player's volume, and the `media` IPC target the media keys reach.
 Item {
   id: root
 
-  Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
+  property var shell: null   // set by the host
 
-  property var shell: null
-  property string preferredPlayerKey: ""
-  // A player the user picked explicitly (source list, Tab, source switch).
-  // It stays shown even while paused, until the popup closes (clearPin).
-  property string pinnedPlayerKey: ""
-  // The source that played last, for keys and the bar when nothing plays.
-  property string lastPlayingKey: ""
-  onPlayingPlayerChanged: if (playingPlayer && !isProxyPlayer(playingPlayer)) lastPlayingKey = playerKey(playingPlayer)
+  readonly property Translations strings: Translations { directory: Qt.resolvedUrl("i18n") }
+  readonly property Metrics metrics: Metrics {}
 
-  // The popup closed: next time it shows what is playing.
-  function clearPin() {
-    pinnedPlayerKey = ""
-  }
-
-  // Global keys and the bar act on what plays, else on what played last,
-  // never on a source the user only looked at in the popup.
-  readonly property var controlPlayer: playingPlayer || playerForKey(lastPlayingKey) || activePlayer
-  property var playerStartedAt: ({})
-  property var pendingTrackOsd: null
-  property int playSerial: 0
+  // ── players and streams ─────────────────────────────────────────────────
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
-  readonly property var nodes: Pipewire.nodes ? Pipewire.nodes.values : []
-  readonly property var playbackStreams: {
-    var list = []
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i]
-      if (n && n.isStream && isPlaybackStream(n) && n.audio) list.push(n)
-    }
-    return list
+  readonly property var playersByKey: MediaModel.indexByKey(players)
+  readonly property var playbackStreams: Streams.playbackStreams(Pipewire.nodes ? Pipewire.nodes.values : [])
+  readonly property var streamsByPlayer: Streams.streamsByPlayer(players, playbackStreams)
+
+  PwObjectTracker { objects: root.playbackStreams }
+
+  // ── which player ────────────────────────────────────────────────────────
+
+  // The player picked last: in the source list, by Tab, or by acting on it.
+  property string preferredPlayerKey: ""
+  // A player picked in the popup stays shown while paused, until it closes.
+  property string pinnedPlayerKey: ""
+  // The source that played last, for the bar and the keys when nothing plays.
+  property string lastPlayingKey: ""
+  property var playOrder: ({})
+  property int playSerial: 0
+
+  // What is actually sounding. The bar button follows it, so looking at a
+  // paused source in the popup never changes the button.
+  readonly property var playingPlayer: MediaModel.playingPlayer(players, playOrder, streamsByPlayer)
+  // What the popup shows.
+  readonly property var activePlayer: MediaModel.activePlayer({
+    players: players, byKey: playersByKey, streams: streamsByPlayer, playing: playingPlayer,
+    preferredKey: preferredPlayerKey, pinnedKey: pinnedPlayerKey, lastPlayingKey: lastPlayingKey,
+  })
+  readonly property string activeKey: MediaModel.playerKey(activePlayer)
+  // What the bar button and the global keys act on: what plays, else what
+  // played last, never a source only looked at in the popup.
+  readonly property var controlPlayer: playingPlayer || playersByKey[lastPlayingKey] || activePlayer
+  // The popup's source list, in a fixed order.
+  readonly property var sourcePlayers: MediaModel.sourceRows(players)
+
+  onPlayingPlayerChanged: if (playingPlayer && !MediaModel.isProxyPlayer(playingPlayer)) lastPlayingKey = MediaModel.playerKey(playingPlayer)
+  onPlayersChanged: syncPlayOrder()
+  Component.onCompleted: syncPlayOrder()
+
+  function syncPlayOrder() {
+    var next = MediaModel.playOrder(players, playOrder, playSerial)
+    if (preferredPlayerKey && !next.alive[preferredPlayerKey]) preferredPlayerKey = ""
+    if (pinnedPlayerKey && !next.alive[pinnedPlayerKey]) pinnedPlayerKey = ""
+    playSerial = next.serial
+    playOrder = next.order
   }
-  readonly property var sourcePlayers: orderedSourcePlayers()
-  readonly property var sourceCyclePlayers: orderedCycleSourcePlayers()
-  readonly property var activePlayer: selectActivePlayer()
-  // What is actually sounding, whatever the popup is showing. The bar button
-  // follows this, so viewing a paused source doesn't change it.
-  readonly property var playingPlayer: oldestPlayingPlayer(true) || oldestPlayingPlayer(false)
-  readonly property bool hasMedia: activePlayer !== null && (activePlayer.trackTitle || activePlayer.trackArtist)
-  readonly property string title: activePlayer ? (activePlayer.trackTitle || "") : ""
-  readonly property string artist: activePlayer ? (activePlayer.trackArtist || "") : ""
-  readonly property string album: activePlayer && activePlayer.trackAlbum ? activePlayer.trackAlbum : ""
-  readonly property string artUrl: activePlayer && activePlayer.trackArtUrl ? activePlayer.trackArtUrl : ""
-  readonly property string identity: activePlayer ? (activePlayer.identity || activePlayer.desktopEntry || "") : ""
-
-  function isProxyPlayer(player) {
-    return MediaModel.isProxyPlayer(player)
-  }
-
-  function hasMetadata(player) {
-    return MediaModel.hasMetadata(player)
-  }
-
-  function hasTrackMetadata(player) {
-    return MediaModel.hasTrackMetadata(player)
-  }
-
-  function playerCanControl(player) {
-    return MediaModel.playerCanControl(player)
-  }
-
-  function canHandleAction(player, action) {
-    return MediaModel.canHandleAction(player, action)
-  }
-
-  function canCycleSource(player) {
-    return MediaModel.canCycleSource(player)
-  }
-
-  function nodeProps(node) {
-    return MediaModel.nodeProps(node)
-  }
-
-  function isPlaybackStream(node) {
-    return MediaModel.isPlaybackStream(node)
-  }
-
-  function streamLabelKey(label) {
-    return MediaModel.streamLabelKey(label)
-  }
-
-  function rawStreamLabel(node) {
-    return MediaModel.rawStreamLabel(node)
-  }
-
-  function playerAppLabel(player) {
-    return MediaModel.playerAppLabel(player)
-  }
-
-  function playerHasPlaybackStream(player) {
-    return MediaModel.playerHasPlaybackStream(player, playbackStreams)
-  }
-
-  function playerKey(player) {
-    return MediaModel.playerKey(player)
-  }
-
-  function playerForKey(key) {
-    if (!key) return null
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (playerKey(p) === key) return p
-    }
-    return null
-  }
-
-  function playerOrder(player, fallback) {
-    var key = playerKey(player)
-    var value = key ? playerStartedAt[key] : undefined
-    return value === undefined ? fallback : value
-  }
-
-  function syncPlayingOrder() {
-    var next = {}
-    var alive = {}
-    var serial = playSerial
-
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      var key = playerKey(p)
-      if (!key) continue
-
-      alive[key] = true
-      if (!p.isPlaying) continue
-
-      if (playerStartedAt[key] === undefined) {
-        serial += 1
-        next[key] = serial
-      } else {
-        next[key] = playerStartedAt[key]
-      }
-    }
-
-    if (preferredPlayerKey && !alive[preferredPlayerKey]) preferredPlayerKey = ""
-    if (pinnedPlayerKey && !alive[pinnedPlayerKey]) pinnedPlayerKey = ""
-
-    playSerial = serial
-    playerStartedAt = next
-  }
-
-  function orderedSourcePlayers() {
-    var list = []
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (hasMetadata(p)) list.push(p)
-    }
-
-    list.sort(function(a, b) {
-      if (!!a.isPlaying !== !!b.isPlaying) return a.isPlaying ? -1 : 1
-      if (isProxyPlayer(a) !== isProxyPlayer(b)) return isProxyPlayer(a) ? 1 : -1
-      if (a.isPlaying && b.isPlaying) {
-        var orderDelta = playerOrder(a, 1000) - playerOrder(b, 1000)
-        if (orderDelta !== 0) return orderDelta
-      }
-      return labelFor(a).localeCompare(labelFor(b))
-    })
-
-    return list
-  }
-
-  function orderedCycleSourcePlayers() {
-    var list = []
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (canCycleSource(p)) list.push(p)
-    }
-
-    list.sort(function(a, b) {
-      if (isProxyPlayer(a) !== isProxyPlayer(b)) return isProxyPlayer(a) ? 1 : -1
-      return labelFor(a).localeCompare(labelFor(b))
-    })
-
-    return list
-  }
-
-  function oldestPlayingPlayer(requirePlaybackStream) {
-    var oldest = null
-    var oldestOrder = 0
-    var playingProxy = null
-    var proxyOrder = 0
-
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (!p) continue
-
-      var proxyPlayer = isProxyPlayer(p)
-      if (p.isPlaying) {
-        if (requirePlaybackStream && !playerHasPlaybackStream(p)) continue
-
-        var order = playerOrder(p, i + 1000)
-        if (!proxyPlayer && (!oldest || order < oldestOrder)) {
-          oldest = p
-          oldestOrder = order
-        } else if (proxyPlayer && (!playingProxy || order < proxyOrder)) {
-          playingProxy = p
-          proxyOrder = order
-        }
-      }
-    }
-
-    return oldest || playingProxy || null
-  }
-
-  function selectActivePlayer() {
-    var preferred = null
-    for (var i = 0; i < players.length; i++) {
-      var p = players[i]
-      if (p && preferredPlayerKey && playerKey(p) === preferredPlayerKey && hasMetadata(p)) preferred = p
-    }
-
-    var pinnedWithTrack = preferred && playerKey(preferred) === pinnedPlayerKey && (preferred.trackTitle || preferred.trackArtist)
-    if (preferred && (preferred.isPlaying || pinnedWithTrack)) return preferred
-    var last = playerForKey(lastPlayingKey)
-    return oldestPlayingPlayer(true) || oldestPlayingPlayer(false)
-      || (last && (last.trackTitle || last.trackArtist) ? last : null)
-      || MediaModel.idlePlayer(players, preferred, playerHasPlaybackStream)
-  }
-
-  function labelFor(player) {
-    return MediaModel.labelFor(player)
-  }
-
-  function osdMessage(player, fallback) {
-    return MediaModel.osdMessage(player, fallback)
-  }
-
-  function trackSignature(player) {
-    return MediaModel.trackSignature(player)
-  }
-
-  function showOsd(actionLabel, iconName, player) {
-    if (!shell) return
-    shell.summon("omarchy.osd", JSON.stringify({
-      icon: iconName || "media",
-      message: osdMessage(player || activePlayer, actionLabel)
-    }))
-  }
-
-  function scheduleOsd(actionLabel, iconName, player, waitForTrackChange, beforeTrackSignature) {
-    if (waitForTrackChange) {
-      pendingTrackOsd = {
-        actionLabel: actionLabel,
-        iconName: iconName,
-        player: player,
-        playerKey: playerKey(player),
-        before: beforeTrackSignature,
-        attempts: 0
-      }
-      trackOsdTimer.restart()
-    } else {
-      Qt.callLater(function() { root.showOsd(actionLabel, iconName, player) })
-    }
-  }
-
-  function flushPendingTrackOsd(force) {
-    var pending = pendingTrackOsd
-    if (!pending) return
-
-    var player = playerForKey(pending.playerKey) || pending.player
-    if (force || MediaModel.trackChanged(pending.before, player) || pending.attempts >= 10) {
-      pendingTrackOsd = null
-      trackOsdTimer.stop()
-      root.showOsd(pending.actionLabel, pending.iconName, player)
-      return
-    }
-
-    pending.attempts = pending.attempts + 1
-    pendingTrackOsd = pending
-    trackOsdTimer.restart()
-  }
-
-  function selectPlayer(key) {
-    var player = playerForKey(key)
-    if (!player || !(player.trackTitle || player.trackArtist)) return false
-    preferredPlayerKey = playerKey(player)
-    pinnedPlayerKey = preferredPlayerKey
-    return true
-  }
-
-  // Plays one source and pauses every other playing one, so only one source
-  // sounds at a time; the started source is also shown in the popup.
-  function playExclusive(key) {
-    var player = playerForKey(key)
-    if (!player) return false
-    var started = player.isPlaying || playPlayer(player)
-    if (!started && player.canTogglePlaying) { player.togglePlaying(); started = true }
-    if (!started) return false
-    pauseOthers(key)
-    selectPlayer(key)
-    return true
-  }
-
-  // Pauses every playing source except the one with this key.
-  function pauseOthers(key) {
-    for (var i = 0; i < players.length; i++) {
-      var other = players[i]
-      // A proxy (playerctld) forwards to real players; pausing it could pause
-      // the source just started.
-      if (other && playerKey(other) !== key && other.isPlaying && !isProxyPlayer(other)) pausePlayer(other)
-    }
-  }
-
-  function playPlayer(player) {
-    if (!player) return false
-    if (player.canPlay) {
-      player.play()
-      return true
-    }
-    return false
-  }
-
-  function pausePlayer(player) {
-    if (!player) return false
-    if (player.canPause) {
-      player.pause()
-      return true
-    }
-    if (player.canTogglePlaying && player.isPlaying) {
-      player.togglePlaying()
-      return true
-    }
-    return false
-  }
-
-  function switchSource(delta, transferPlayback, showFeedback) {
-    var list = sourceCyclePlayers
-    if (!list || list.length === 0) return false
-
-    var activeKey = playerKey(activePlayer)
-    var index = 0
-    for (var i = 0; i < list.length; i++) {
-      if (playerKey(list[i]) === activeKey) {
-        index = i
-        break
-      }
-    }
-
-    index = (index + delta + list.length) % list.length
-    var current = transferPlayback && playingPlayer ? playingPlayer : activePlayer
-    var next = list[index]
-    var currentWasPlaying = current && current.isPlaying
-    var currentKey = playerKey(current)
-    var nextKey = playerKey(next)
-
-    preferredPlayerKey = nextKey
-    // From the keys (popup closed): don't pin; make it the target of the
-    // next play/next/previous key instead.
-    if (next && !next.isPlaying) lastPlayingKey = nextKey
-
-    if (transferPlayback && currentWasPlaying && next && nextKey !== currentKey) {
-      var nextWasPlaying = next.isPlaying
-      var nextStarted = nextWasPlaying || playPlayer(next)
-      if (nextStarted) pausePlayer(current)
-    }
-
-    if (showFeedback !== false) Qt.callLater(function() {
-      root.showOsd(strings.t("media.source"), "media-source", next)
-    })
-
-    return true
-  }
-
-  function playerForAction(action, targetKey) {
-    var targeted = playerForKey(targetKey)
-    if (targeted) return targeted
-
-    if (action === "pause" || action === "playPause") {
-      var oldest = oldestPlayingPlayer(true) || oldestPlayingPlayer(false)
-      if (oldest) return oldest
-    }
-
-    if (canHandleAction(controlPlayer, action)) return controlPlayer
-    if (canHandleAction(activePlayer, action)) return activePlayer
-
-    var list = sourcePlayers
-    for (var i = 0; i < list.length; i++) {
-      if (canHandleAction(list[i], action)) return list[i]
-    }
-
-    return activePlayer
-  }
-
-  function runAction(action, showFeedback, targetKey) {
-    var player = playerForAction(action, targetKey)
-    var key = playerKey(player)
-    var actionLabel = strings.t("media.playPause")
-    var iconName = "media"
-    var beforeTrackSignature = trackSignature(player)
-    var handled = false
-
-    if (action === "next") {
-      actionLabel = strings.t("media.next")
-      iconName = "media-next"
-      if (player && player.canGoNext) {
-        player.next()
-        handled = true
-      }
-    } else if (action === "previous") {
-      actionLabel = strings.t("media.previous")
-      iconName = "media-previous"
-      if (player && player.canGoPrevious) {
-        player.previous()
-        handled = true
-      }
-    } else if (action === "play") {
-      actionLabel = strings.t("media.play")
-      iconName = "media-play"
-      if (player && player.canPlay) {
-        player.play()
-        handled = true
-      } else if (player && player.canTogglePlaying && !player.isPlaying) {
-        player.togglePlaying()
-        handled = true
-      }
-    } else if (action === "pause") {
-      actionLabel = strings.t("media.pause")
-      iconName = "media-pause"
-      if (player && player.canPause) {
-        player.pause()
-        handled = true
-      } else if (player && player.canTogglePlaying && player.isPlaying) {
-        player.togglePlaying()
-        handled = true
-      }
-    } else if (action === "playPause") {
-      actionLabel = player && player.isPlaying ? strings.t("media.pause") : strings.t("media.play")
-      iconName = player && player.isPlaying ? "media-pause" : "media-play"
-      if (player && player.isPlaying && player.canPause) {
-        player.pause()
-        handled = true
-      } else if (player && !player.isPlaying && player.canPlay) {
-        player.play()
-        handled = true
-      } else if (player && player.canTogglePlaying) {
-        player.togglePlaying()
-        handled = true
-      }
-    }
-
-    // An action on another source (row button, bar button) doesn't move the
-    // popup off a source the user picked.
-    if (handled && key && (!pinnedPlayerKey || pinnedPlayerKey === key)) preferredPlayerKey = key
-    if (showFeedback !== false)
-      scheduleOsd(actionLabel, iconName, player, handled && (action === "next" || action === "previous"), beforeTrackSignature)
-    return handled
-  }
-
-  // Recompute play-order reactively instead of polling every 500ms.
-  // syncPlayingOrder only depends on the set of players and each player's
-  // isPlaying state: onPlayersChanged covers players appearing/disappearing,
-  // and the Instantiator wires isPlayingChanged for each live player.
-  Component.onCompleted: root.syncPlayingOrder()
-  onPlayersChanged: root.syncPlayingOrder()
 
   Instantiator {
     model: root.players
     delegate: Connections {
       required property var modelData
       target: modelData
-      function onIsPlayingChanged() { root.syncPlayingOrder() }
+      function onIsPlayingChanged() { root.playStateChanged(modelData) }
     }
   }
 
-  Timer {
-    id: trackOsdTimer
-    interval: 120
-    repeat: false
-    onTriggered: root.flushPendingTrackOsd(false)
+  function playStateChanged(player) {
+    syncPlayOrder()
+    // A skip on a paused source started it: the others pause, as with play.
+    if (skipWatch.running && player.isPlaying && MediaModel.playerKey(player) === skipWatch.key) pauseOthers(skipWatch.key)
   }
 
-  PwObjectTracker { objects: root.playbackStreams }
+  // ── what the popup shows ────────────────────────────────────────────────
 
-  // ------------------------------------------------------------- volume keys
-  //
-  // The volume keys arrive as global shortcuts and change the volume here,
-  // with no process per press, stepping, clamping, unmuting and debouncing the
-  // way omarchy-audio-output-volume does, so either path lands on the same
-  // volume and OSD. That script resolves a DSP sink through to the physical
-  // sink it feeds on every press, from the live routing. An ALSA sink is its
-  // own physical sink, so only then do the keys act here; any other default
-  // sink falls back to the script.
-  readonly property var defaultSink: Pipewire.defaultAudioSink
-  readonly property var volumeSink: defaultSink && String(defaultSink.name).indexOf("alsa_output.") === 0 ? defaultSink : null
-  property double lastMuteToggle: 0
+  readonly property var iconNames: MediaModel.iconNames(activePlayer, desktopIcon(activePlayer))
+  readonly property string sourceName: Display.capitalize(activePlayer ? activePlayer.identity || MediaModel.playerAppLabel(activePlayer) : "")
+  readonly property string sourceHost: MediaModel.sourceHost(activePlayer)
+  readonly property color iconColor: Color.bar.text
 
-  // Returns false when the default sink is not one to control here, so the
-  // caller falls back to the script.
-  function handleVolumeKey(action) {
-    var audio = volumeSink && volumeSink.audio
-    if (!audio) return false
+  readonly property TrackDisplay display: TrackDisplay {
+    player: root.activePlayer
+    playersByKey: root.playersByKey
+    iconNames: root.iconNames
+    probeScript: root.scriptPath("probe-art.sh")
+    metrics: root.metrics
+  }
 
-    var step = MediaModel.volumeKeyStep(action, Math.round(audio.volume * 100), audio.muted)
-    if (!step) return false
+  readonly property AppIcon appIcon: AppIcon {
+    names: root.iconNames
+    color: root.iconColor
+    script: root.scriptPath("app-icon.sh")
+    metrics: root.metrics
+  }
 
-    if (action === "mute-toggle") {
-      // Some keyboards bounce the mute key; the script ignores a second
-      // toggle within 250ms too.
-      var now = Date.now()
-      if (now - lastMuteToggle < 250) return true
-      lastMuteToggle = now
-      audio.muted = step.muted
-    } else {
-      audio.muted = false
-      audio.volume = step.percent / 100
-    }
+  function desktopIcon(player) {
+    var entry = player ? player.desktopEntry : ""
+    if (!entry) return ""
+    var found = DesktopEntries.heuristicLookup ? DesktopEntries.heuristicLookup(entry) : DesktopEntries.byId(entry)
+    return found ? found.icon : ""
+  }
 
-    // The payload omarchy-osd builds, from the values just set: the node may
-    // not report them back before the OSD draws.
-    shell.summon("omarchy.osd", JSON.stringify({
-      icon: MediaModel.volumeOsdIcon(step.percent, step.muted),
-      message: "",
-      value: String(step.percent),
-      progressText: I18n.formatNumber(step.percent) + "%",
-      max: "100",
-      duration: ""
-    }))
+  function scriptPath(name) {
+    return Display.localPath(Qt.resolvedUrl("scripts/" + name))
+  }
+
+  // ── volume of the shown player ──────────────────────────────────────────
+
+  readonly property PlayerVolume volume: PlayerVolume {
+    player: root.activePlayer
+    streams: root.streamsByPlayer[root.activeKey] || []
+  }
+
+  // ── popup actions ───────────────────────────────────────────────────────
+
+  // The popup closed: next time it opens on what is playing.
+  function clearPin() {
+    pinnedPlayerKey = ""
+  }
+
+  // Shows a player in the popup, playback unchanged.
+  function selectPlayer(key) {
+    if (!MediaModel.hasShownTrack(playersByKey[key])) return false
+    preferredPlayerKey = key
+    pinnedPlayerKey = key
     return true
   }
 
-  PwObjectTracker { objects: root.defaultSink ? [root.defaultSink] : [] }
+  // An explicit pick shows at once, without the hold for player switches.
+  function showSource(key) {
+    display.explicit = true
+    if (selectPlayer(key)) display.refresh()
+    else display.explicit = false
+  }
+
+  function cycleSource(direction) {
+    if (sourcePlayers.length > 1) showSource(MediaModel.playerKey(MediaModel.cycle(sourcePlayers, activePlayer, direction)))
+  }
+
+  // ▶ plays a source and pauses every other one, so only one sounds at a
+  // time; ❚❚ just pauses it.
+  function toggleSource(key) {
+    var player = playersByKey[key]
+    if (!player) return
+    if (player.isPlaying) {
+      runAction("pause", false, key)
+      return
+    }
+    display.explicit = true
+    if (!playExclusive(key)) display.explicit = false
+  }
+
+  function playExclusive(key) {
+    var player = playersByKey[key]
+    if (!player || !(player.isPlaying || Actions.performAction(player, "play"))) return false
+    pauseOthers(key)
+    selectPlayer(key)
+    return true
+  }
+
+  function pauseOthers(key) {
+    for (var i = 0; i < players.length; i++) {
+      var other = players[i]
+      // A proxy (playerctld) forwards to real players: pausing it could pause
+      // the source just started.
+      if (other && other.isPlaying && MediaModel.playerKey(other) !== key && !MediaModel.isProxyPlayer(other))
+        Actions.performAction(other, "pause")
+    }
+  }
+
+  // Previous or next on the shown source. Many players start playing when
+  // the track changes; if this one does soon, the other sources pause, as
+  // with play. A proxy forwards to a real player the "others" would include,
+  // so skips on it never pause anything.
+  function skipTrack(action) {
+    if (!activePlayer) return
+    if (activePlayer.isPlaying || MediaModel.isProxyPlayer(activePlayer)) {
+      skipWatch.stop()
+    } else {
+      skipWatch.key = activeKey
+      skipWatch.restart()
+    }
+    runAction(action, false, activeKey)
+  }
+
+  Timer {
+    id: skipWatch
+    property string key: ""
+    interval: 2500
+  }
+
+  function toggleShuffle() {
+    if (activePlayer && activePlayer.shuffleSupported) activePlayer.shuffle = !activePlayer.shuffle
+  }
+
+  function cycleRepeat() {
+    if (activePlayer && activePlayer.loopSupported)
+      activePlayer.loopState = Display.nextLoopState(activePlayer.loopState, MprisLoopState.None, MprisLoopState.Playlist, MprisLoopState.Track)
+  }
+
+  // Brings the shown source's window forward: MPRIS Raise when the player
+  // can, else raise-player.sh finds its Hyprland window.
+  function raisePlayer() {
+    if (!activePlayer) return
+    if (activePlayer.canRaise) activePlayer.raise()
+    else raiser.run(null, ["sh", scriptPath("raise-player.sh"), String(activePlayer.dbusName || ""), String(activePlayer.trackTitle || ""), sourceHost])
+  }
+
+  readonly property ScriptRunner raiser: ScriptRunner { metrics: root.metrics }
+
+  // ── global actions ──────────────────────────────────────────────────────
+
+  function runAction(action, showFeedback, targetKey) {
+    var player = Actions.actionPlayer({
+      players: players, byKey: playersByKey, playing: playingPlayer, control: controlPlayer, active: activePlayer, order: playOrder,
+    }, action, targetKey)
+    var key = MediaModel.playerKey(player)
+    var feedback = Actions.actionFeedback(action, player)
+    var before = MediaModel.trackSignature(player)
+    var handled = Actions.performAction(player, action)
+    // An action on another source (a row, the bar button) doesn't move the
+    // popup off a source the user picked.
+    if (handled && key && (!pinnedPlayerKey || pinnedPlayerKey === key)) preferredPlayerKey = key
+    if (showFeedback && handled && (action === "next" || action === "previous"))
+      osd.showAfterTrackChange(strings.t(feedback.label), feedback.icon, player, before)
+    else if (showFeedback)
+      osd.showSoon(strings.t(feedback.label), feedback.icon, player)
+    return handled
+  }
+
+  // The source keys: the next or previous source by name. transferPlayback
+  // also moves playback to it.
+  function switchSource(delta, transferPlayback) {
+    var list = MediaModel.cycleOrder(players)
+    if (!list.length) return false
+    var next = MediaModel.cycle(list, activePlayer, delta)
+    var nextKey = MediaModel.playerKey(next)
+    var current = transferPlayback && playingPlayer ? playingPlayer : activePlayer
+    var moving = transferPlayback && current && current.isPlaying && MediaModel.playerKey(current) !== nextKey
+
+    preferredPlayerKey = nextKey
+    // With the popup closed there is no pin: the next play, next or previous
+    // key goes to this source instead.
+    if (!next.isPlaying) lastPlayingKey = nextKey
+    if (moving && (next.isPlaying || Actions.performAction(next, "play"))) Actions.performAction(current, "pause")
+
+    osd.showSoon(strings.t("media.source"), "media-source", next)
+    return true
+  }
+
+  readonly property MediaOsd osd: MediaOsd {
+    shell: root.shell
+    playersByKey: root.playersByKey
+    fallbackPlayer: root.activePlayer
+  }
+
+  // ── IPC ─────────────────────────────────────────────────────────────────
+
+  // Asks the bar widgets to add what they count with addWidgetMetrics(). A
+  // signal argument would reach them as a copy, so they report back instead.
+  signal metricsRequested()
+  property var widgetMetrics: []
+
+  function addWidgetMetrics(entry) {
+    widgetMetrics.push(entry)
+  }
 
   function statusJson() {
     var p = controlPlayer
     return JSON.stringify({
       hasPlayer: p !== null,
-      hasMedia: !!(p && (p.trackTitle || p.trackArtist)),
-      playing: p ? !!p.isPlaying : false,
-      identity: p ? (p.identity || "") : "",
-      desktopEntry: p ? (p.desktopEntry || "") : "",
-      title: p ? (p.trackTitle || "") : "",
-      artist: p ? (p.trackArtist || "") : "",
-      album: p && p.trackAlbum ? p.trackAlbum : "",
-      artUrl: p && p.trackArtUrl ? p.trackArtUrl : "",
-      canGoNext: p ? !!p.canGoNext : false,
-      canGoPrevious: p ? !!p.canGoPrevious : false,
-      canTogglePlaying: p ? !!p.canTogglePlaying : false
+      hasMedia: MediaModel.hasShownTrack(p),
+      playing: !!(p && p.isPlaying),
+      identity: p ? p.identity || "" : "",
+      desktopEntry: p ? p.desktopEntry || "" : "",
+      title: p ? p.trackTitle || "" : "",
+      artist: p ? p.trackArtist || "" : "",
+      album: p ? p.trackAlbum || "" : "",
+      artUrl: p ? p.trackArtUrl || "" : "",
+      canGoNext: !!(p && p.canGoNext),
+      canGoPrevious: !!(p && p.canGoPrevious),
+      canTogglePlaying: !!(p && p.canTogglePlaying),
     })
   }
 
-  // Keybindings reach these handlers as Hyprland global shortcuts, run here
-  // exactly as the IPC call would run them, with no client to spawn.
-  function runShortcut(method) {
-    if (typeof ipcHandler[method] !== "function") return false
-    ipcHandler[method]()
-    return true
+  function metricsJson() {
+    widgetMetrics = []
+    metricsRequested()
+    return metrics.report({ players: players.length, playbackStreams: playbackStreams.length, widgets: widgetMetrics })
   }
 
   ShellIpc {
-    id: ipcHandler
     target: "media"
 
-    function status(): string {
-      return root.statusJson()
-    }
-
-    function playPause(): string {
-      return root.runAction("playPause", true) ? "ok" : "unhandled"
-    }
-
-    function next(): string {
-      return root.runAction("next", true) ? "ok" : "unhandled"
-    }
-
-    function previous(): string {
-      return root.runAction("previous", true) ? "ok" : "unhandled"
-    }
-
-    function play(): string {
-      return root.runAction("play", true) ? "ok" : "unhandled"
-    }
-
-    function pause(): string {
-      return root.runAction("pause", true) ? "ok" : "unhandled"
-    }
-
-    function sourceNext(): string {
-      return root.switchSource(1, false, true) ? "ok" : "unhandled"
-    }
-
-    function sourcePrevious(): string {
-      return root.switchSource(-1, false, true) ? "ok" : "unhandled"
-    }
-
-    function sourceSwitch(): string {
-      return root.switchSource(1, true, true) ? "ok" : "unhandled"
-    }
-
-    function sourceSwitchPrevious(): string {
-      return root.switchSource(-1, true, true) ? "ok" : "unhandled"
-    }
-
-    function ping(): string {
-      return "ok"
-    }
+    function status(): string { return root.statusJson() }
+    function playPause(): string { return root.runAction("playPause", true, "") ? "ok" : "unhandled" }
+    function next(): string { return root.runAction("next", true, "") ? "ok" : "unhandled" }
+    function previous(): string { return root.runAction("previous", true, "") ? "ok" : "unhandled" }
+    function play(): string { return root.runAction("play", true, "") ? "ok" : "unhandled" }
+    function pause(): string { return root.runAction("pause", true, "") ? "ok" : "unhandled" }
+    function sourceNext(): string { return root.switchSource(1, false) ? "ok" : "unhandled" }
+    function sourcePrevious(): string { return root.switchSource(-1, false) ? "ok" : "unhandled" }
+    function sourceSwitch(): string { return root.switchSource(1, true) ? "ok" : "unhandled" }
+    function sourceSwitchPrevious(): string { return root.switchSource(-1, true) ? "ok" : "unhandled" }
+    function ping(): string { return "ok" }
+    // Development: docs/METRICS.md.
+    function metrics(): string { return root.metricsJson() }
   }
 }
