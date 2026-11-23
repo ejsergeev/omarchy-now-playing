@@ -61,31 +61,34 @@ Qt 6, aarch64, Node 26. CPU is in milliseconds of CPU time per window, so
 
 ## Results
 
-Baseline is version 1.0.0 (commit `d285467`), final is this branch, both
-measured on 2026-11-23 on the same machine and shell session conditions.
+Baseline is version 1.0.0 (commit `d285467`), rewrite is the rebuild
+(`2016dc3`), cover styles adds the three ways to show a cover and the
+handling of YouTube Music skips (`fea620c`). All measured on 2026-11-23 on
+the same machine with the same tools; raw results in `docs/metrics/`
+(`baseline`, `final`, `cover-styles`).
 
-| # | Metric | 1.0.0 | Final | Target |
-|---|---|---|---|---|
-| P1 | CPU, `play` (popup closed), 20 s | 30 ms | 50 ms | met: both are noise; neither runs a timer while the popup is closed |
-| P2 | CPU, `open-art`, 20 s | 610 ms | 555 ms (−9%) | **not met**, see below |
-| P2 | CPU, `open-spectrum`, 20 s | 1315 ms | 1185 ms (−10%) | **not met**, see below |
-| P3 | selection, full pass (players or nodes change) | 29.1 µs | 8.4 µs (3.5×) | not met for the full pass |
-| P3 | selection, play/pause (the frequent change) | 28.1 µs | 1.1 µs (25×) | met |
-| P4 | spectrum tick | 5.6 µs | 0.06–0.15 µs (≈ 40–90×) | met |
-| M1 | shell PSS with − without plugin, after startup | ≈ 7.3 MB | ≈ 5.0 MB | not provable: PSS noise is ±3 MB; M2 is the precise measure |
-| M2 | objects per bar, popup never opened | 380 (41 bar + 339 popup, built at startup on every bar) | 25 (popup not built) | −93%; the 25 are the host's BarIconButton and panel |
-| M2 | objects per bar, popup open | 339 | 135 | −60%; most of the rest are host controls' insides |
-| M3 | decoded covers | ≤ 2, box-sized | ≤ 2, box-sized, none before the first open | met |
-| S1 | processes at startup (1 bar) | 3 spawns, 14 processes | 1 spawn, 6–7 processes (the app icon) | met |
-| S2 | `churn`: 20 changes, 10 with art | 10 spawns, 24 processes | 9 spawns, 18 processes | met: one probe per new cover is the floor |
-| S3 | `switch`: 20 switches between 2 players | 39 spawns, 98 processes, 190 ms child CPU | 2 spawns, 4 processes, 10 ms | met: only the first look at a player runs anything |
-| L1 | first popup open | not measurable | 20–40 ms; reopening keeps the built popup | about met |
-| Q1 | coverage of `lib/*.js` | `MediaModel.js` only, 100% / 98% | 8 modules, 100% lines / 98.3% branches, 46 tests | met |
-| Q2 | qmllint warnings | 80 | 0 | met |
-| Q3 | shellcheck | not run | not run | open: shellcheck is not installed here |
-| Q4 | i18n problems | 0 | 0 | met |
-| Q5 | structure | 2 files over 350 lines (largest 1393), 1 function over 40, 3 repeated blocks | 0, 0, 0 (largest file 322 lines) | met |
-| Q6 | `omarchy plugin validate` | passes | passes | met |
+| # | Metric | 1.0.0 | Rewrite | Cover styles | Target |
+|---|---|---|---|---|---|
+| P1 | CPU, `play` (popup closed), 20 s | 30 ms | 50 ms | 30 ms | met: both are noise; neither runs a timer while the popup is closed |
+| P2 | CPU, `open-art`, 20 s | 610 ms | 555 ms (−9%) | 535 ms (cover), 540 ms (duotone) | **not met**, see below |
+| P2 | CPU, `open-spectrum`, 20 s | 1315 ms | 1185 ms (−10%) | 1140 ms | **not met**, see below |
+| P3 | selection, full pass (players or nodes change) | 29.1 µs | 8.4 µs (3.5×) | 8.4 µs | not met for the full pass |
+| P3 | selection, play/pause (the frequent change) | 28.1 µs | 1.1 µs (25×) | 1.1 µs | met |
+| P4 | spectrum tick | 5.6 µs | 0.06–0.15 µs (≈ 40–90×) | 0.06 µs | met |
+| M1 | shell PSS with − without plugin, after startup | ≈ 7.3 MB | ≈ 5.0 MB | ≈ −1.3 MB (noise) | not provable: PSS noise is ±3 MB; M2 is the precise measure |
+| M2 | objects per bar, popup never opened | 380 (41 bar + 339 popup, built at startup on every bar) | 25 (popup not built) | 25 | −93%; the 25 are the host's BarIconButton and panel |
+| M2 | objects per bar, popup open | 339 | 135 | 136; 138 with the duotone layer | −60%; most of the rest are host controls' insides |
+| M3 | decoded covers | ≤ 2, box-sized | ≤ 2, box-sized, none before the first open | ≤ 2, box-sized | met |
+| S1 | processes at startup (1 bar) | 3 spawns, 14 processes | 1 spawn, 6–7 processes (the app icon) | 2 spawns, 9 processes: the app icon, and a probe of the cover playing at startup | met |
+| S2 | `churn`: 20 changes, 10 with art | 10 spawns, 24 processes | 9 spawns, 18 processes | 9 spawns, 18 processes | met: one probe per new cover is the floor |
+| S3 | `switch`: 20 switches between 2 players | 39 spawns, 98 processes, 190 ms child CPU | 2 spawns, 4 processes, 10 ms | 2 spawns, 4 processes, 20 ms | met: only the first look at a player runs anything |
+| L1 | first popup open | not measurable | 20–40 ms; reopening keeps the built popup | 18 ms | about met |
+| Q1 | coverage of `lib/*.js` | `MediaModel.js` only, 100% / 98% | 8 modules, 100% lines / 98.3% branches, 46 tests | 9 modules, 100% lines / 98.4% branches, 49 tests | met |
+| Q2 | qmllint warnings | 80 | 0 | 0 | met |
+| Q3 | shellcheck | not run | not run | not run | open: shellcheck is not installed here |
+| Q4 | i18n problems | 0 | 0 | 0 | met |
+| Q5 | structure | 2 files over 350 lines (largest 1393), 1 function over 40, 3 repeated blocks | 0, 0, 0 (largest file 322 lines) | 0, 0, 0 (largest file 345 lines) | met |
+| Q6 | `omarchy plugin validate` | passes | passes | passes | met |
 
 P3 and P4 baselines are lower than first recorded (84 and 106 µs): the first
 bench ran code in a separate V8 context, which slowed both versions alike.
